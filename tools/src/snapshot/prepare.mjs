@@ -47,15 +47,22 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
   // touches all of them. Without it changesets versions only what has a pending
   // changeset — which on a green main is nothing, and the snapshot publishes an
   // empty set while exiting 0.
+  // Nothing publishable means NO changeset file. An empty frontmatter block
+  // ("---\n---") is not a harmless no-op: `changeset version` reads it as a
+  // malformed changeset and fails the workflow at a step that has nothing to do
+  // with the real condition, which is simply that this repo has nothing to ship.
   const versionedPackages = publishable.map(({ json }) => json.name).sort()
-  mkdirSync(join(root, '.changeset'), { recursive: true })
-  writeFileSync(
-    join(root, '.changeset/zz-snapshot-all.md'),
-    `---\n${versionedPackages.map((n) => `"${n}": patch\n`).join('')}---\n\nsnapshot\n`,
-  )
+  if (versionedPackages.length > 0) {
+    mkdirSync(join(root, '.changeset'), { recursive: true })
+    writeFileSync(
+      join(root, '.changeset/zz-snapshot-all.md'),
+      `---\n${versionedPackages.map((n) => `"${n}": patch\n`).join('')}---\n\nsnapshot\n`,
+    )
+  }
 
   const privatised = []
   const widened = []
+  const skipped = []
 
   for (const { dir, json } of entries) {
     const file = join(dir, 'package.json')
@@ -82,6 +89,16 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
     for (const [name, range] of Object.entries(json.peerDependencies ?? {})) {
       if (!name.startsWith('@noy-db/')) continue
       if (range.includes(DEV_MARKER)) continue // already widened — a re-run
+      // A range with a dangling "||" must NOT be widened. Appending would give
+      // "^0.7.0 ||  || >=0.0.0-dev-0 <0.0.1", which semver reads as "*" — so a
+      // malformed range would be silently upgraded into an unbounded one, and
+      // the snapshot would install against anything. Report it instead: the
+      // versions-uniform gate is what fixes it, and this is not that gate.
+      const trimmed = range.trim()
+      if (trimmed.endsWith('||') || trimmed.startsWith('||')) {
+        skipped.push(`${json.name}: ${name} ${JSON.stringify(range)}`)
+        continue
+      }
       json.peerDependencies[name] = `${range} || ${DEV_CLAUSE}`
       touched = true
       if (!widened.includes(json.name)) widened.push(json.name)
@@ -99,5 +116,5 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
     if (touched) writeJson(file, json)
   }
 
-  return { versionedPackages, privatised: privatised.sort(), widened: widened.sort() }
+  return { versionedPackages, privatised: privatised.sort(), widened: widened.sort(), skipped: skipped.sort() }
 }

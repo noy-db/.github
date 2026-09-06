@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
 import { computeFloors, floorKey, pinnedRootText, planGroups } from '../src/gates/peer-floor.mjs'
-import { FIXTURES, TOOLS } from './helpers.mjs'
+import { copyFixture, FIXTURES, TOOLS } from './helpers.mjs'
 
 test('computeFloors: a caret floors at the version written, prerelease included', () => {
   assert.deepEqual(computeFloors({ peerDependencies: { '@noy-db/hub': '^0.7.0' } }), {
@@ -80,14 +81,27 @@ test('planGroups: packages sharing a floor set share a group; a peerless one is 
   )
 })
 
-test('planGroups: a bad range becomes an error, never a thrown stack or an exit', () => {
-  const root = join(FIXTURES, 'workspace')
-  const cfg = loadConfig(root)
-  // Not a fixture edit: floorKey/computeFloors are the pure half, and the point
-  // here is that planGroups REPORTS rather than exits. Provoke it directly.
+test('planGroups: a bad range becomes an error, never a thrown stack or an exit', (t) => {
+  // A REAL bad range, fed through the fixture — not a proxy assertion on
+  // floorKey. "*" is the unfalsifiable case: computeFloors throws, and the
+  // point is that planGroups CATCHES it, reports it, and yields no group to
+  // install. An error that reached the caller as a throw would take the exit
+  // code away from cli.mjs.
+  const root = copyFixture(t, 'workspace')
+  const file = join(root, 'packages/a/package.json')
+  const json = JSON.parse(readFileSync(file, 'utf8'))
+  json.peerDependencies['@noy-db/hub'] = '*'
+  writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
+
+  const { groups, errors } = planGroups(root, loadConfig(root))
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /no lower bound/)
+  assert.deepEqual(groups, [])
+})
+
+test('floorKey: a floor SET is one identity, and differing floors are different ones', () => {
   assert.equal(typeof floorKey({ '@noy-db/hub': '0.7.0' }), 'string')
   assert.notEqual(floorKey({ '@noy-db/hub': '0.7.0' }), floorKey({ '@noy-db/hub': '0.6.0' }))
-  assert.deepEqual(planGroups(root, cfg).errors, [])
 })
 
 test('cli: peer-floor --dry-run prints the plan, installs nothing, exits 0', () => {

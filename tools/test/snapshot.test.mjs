@@ -53,6 +53,7 @@ test('prepareSnapshot: all five effects, on a copy of fixtures/workspace', (t) =
     versionedPackages: ['@noy-db/a', '@noy-db/hub'],
     privatised: ['some-tool'],
     widened: ['@noy-db/a'],
+    skipped: [],
   })
 })
 
@@ -71,6 +72,38 @@ test('prepareSnapshot: a range already carrying the dev clause is left alone —
   assert.deepEqual(second.widened, [])
   assert.deepEqual(second.privatised, [])
   assert.deepEqual(second.versionedPackages, ['@noy-db/a', '@noy-db/hub'])
+})
+
+test('prepareSnapshot: a range ending in "||" is left alone and REPORTED, not widened', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const file = join(root, 'packages/a/package.json')
+  const json = JSON.parse(readFileSync(file, 'utf8'))
+  json.peerDependencies['@noy-db/hub'] = '^0.7.0 || '
+  writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
+
+  const summary = prepareSnapshot(root, loadConfig(root), OPTS)
+  // Appending to it would produce "^0.7.0 ||  || >=0.0.0-dev-0 <0.0.1", which
+  // semver reads as "*" — the widening would silently turn a malformed range
+  // into an unbounded one and the snapshot would install against anything.
+  assert.equal(read(root, 'packages/a').peerDependencies['@noy-db/hub'], '^0.7.0 || ')
+  assert.deepEqual(summary.widened, [])
+  assert.deepEqual(summary.skipped, ['@noy-db/a: @noy-db/hub "^0.7.0 || "'])
+})
+
+test('prepareSnapshot: nothing publishable writes NO changeset, and says so', (t) => {
+  const root = copyFixture(t, 'workspace')
+  for (const rel of ['packages/a', 'packages/hub']) {
+    const file = join(root, rel, 'package.json')
+    const json = JSON.parse(readFileSync(file, 'utf8'))
+    json.private = true
+    writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
+  }
+  const summary = prepareSnapshot(root, loadConfig(root), OPTS)
+  // An empty frontmatter block is not a no-op changeset: `changeset version`
+  // reads "---\n---" as a malformed changeset and fails the workflow at a step
+  // that has nothing to do with the real condition, which is "nothing to ship".
+  assert.equal(existsSync(join(root, '.changeset/zz-snapshot-all.md')), false)
+  assert.deepEqual(summary.versionedPackages, [])
 })
 
 test('prepareSnapshot: an existing publishConfig field survives', (t) => {

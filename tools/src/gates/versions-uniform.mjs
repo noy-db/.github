@@ -61,8 +61,17 @@ export function runVersionsUniform(root, cfg) {
         const target = versionOf.get(name)
         // Checked BEFORE validRange, because "^0.7.0 || " is a valid range that
         // floors at 0.0.0 — it satisfies everything and looks almost right.
-        if (range.trim().endsWith('||')) {
-          failures.push(`${json.name}: ${field}.${name} range ends in "||" — an unfinished append floors at 0.0.0`)
+        //
+        // Both ends, because semver normalises them identically: MEASURED,
+        // validRange("^0.7.0 || ") === validRange("|| ^0.7.0") === "*", and
+        // both satisfy 9.9.9. The leading form is what a widening prepended
+        // instead of appended leaves behind, and it reads even more like a
+        // real range than the trailing one does.
+        const trimmed = range.trim()
+        if (trimmed.endsWith('||') || trimmed.startsWith('||')) {
+          failures.push(
+            `${json.name}: ${field}.${name} range "${range}" has a dangling "||" — an unfinished append floors at 0.0.0`,
+          )
           continue
         }
         if (!semver.validRange(range)) {

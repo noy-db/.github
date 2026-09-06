@@ -46,7 +46,19 @@ test('workspace: a range left ending in "||" is reported as the unfinished appen
   })
   const failures = gate(root)
   assert.equal(failures.length, 1)
-  assert.match(failures[0], /ends in "\|\|"/)
+  assert.match(failures[0], /"\|\|"/)
+})
+
+test('workspace: a range left STARTING with "||" is the same defect, mirrored', (t) => {
+  const root = copyFixture(t, 'workspace')
+  editPkg(root, 'packages/a', (j) => {
+    // semver reads this as "*" exactly as the trailing form does — it admits
+    // every version, including ones this repo never published.
+    j.peerDependencies['@noy-db/hub'] = '|| ^0.7.0'
+  })
+  const failures = gate(root)
+  assert.equal(failures.length, 1)
+  assert.match(failures[0], /"\|\|"/)
 })
 
 test('workspace: a private package is not part of the line', (t) => {
