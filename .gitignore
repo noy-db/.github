@@ -1,1 +1,7 @@
 node_modules/
+
+# The codemod-rows gate reads its maps from the INSTALLED @noy-db/hub, so its
+# fixture needs a real resolvable node_modules/@noy-db/hub. It is a committed
+# relative symlink to the sibling fixture package, not an installed tree — the
+# blanket node_modules/ rule above would swallow it.
+!tools/fixtures/workspace/packages/a/node_modules/

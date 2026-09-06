@@ -1,0 +1,17 @@
+{
+  "renames": [
+    {
+      "package": "@noy-db/a",
+      "kind": "identifier",
+      "from": "OldName",
+      "to": "NewName",
+      "safeGlobalReplace": true
+    },
+    {
+      "package": "@noy-db/somewhere-else",
+      "kind": "identifier",
+      "from": "Gone",
+      "to": "Arrived"
+    }
+  ]
+}

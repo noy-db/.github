@@ -1,0 +1,10 @@
+{
+  "name": "@noy-db/a",
+  "version": "0.7.0",
+  "peerDependencies": {
+    "@noy-db/hub": "^0.7.0"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "0.7.0"
+  }
+}
