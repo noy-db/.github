@@ -25,7 +25,10 @@ function parseArgs(argv) {
     else if (opts.gate === undefined) opts.gate = a
     else throw new Error(`unexpected argument ${a}`)
   }
+  // A trailing `--root` / `--config` reads past the end of argv; report it as
+  // a usage error rather than letting resolve(undefined) throw a TypeError.
   if (opts.root === undefined) throw new Error('--root needs a path')
+  if (argv.includes('--config') && opts.config === undefined) throw new Error('--config needs a path')
   return opts
 }
 
