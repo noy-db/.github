@@ -1,0 +1,128 @@
+name: Setup family
+description: >-
+  Check out the caller, check out this repo's family-tools alongside it, install
+  Node, the caller's dependencies and the tools' one dependency.
+
+inputs:
+  manager:
+    description: The package manager the caller installs with — pnpm or npm.
+    required: false
+    default: pnpm
+  node-version:
+    description: Node major to install.
+    required: false
+    default: '22'
+  frozen:
+    description: >-
+      'true' installs the caller with a frozen lockfile (the CI default). Set to
+      'false' only for a job that deliberately mutates the lockfile — the
+      snapshot run adds @changesets/cli.
+    required: false
+    default: 'true'
+  install:
+    description: >-
+      'false' skips installing the CALLER's dependencies. The tools are still
+      installed, so a job that only reads family.config.json costs one npm
+      install of semver instead of a full workspace install.
+    required: false
+    default: 'true'
+
+outputs:
+  tools:
+    description: Path to the family-tools CLI, for `node <tools> <gate> --root .`.
+    value: ${{ steps.tools.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the caller
+      uses: actions/checkout@v5
+
+    # The tag is deliberately hardcoded: `v1` is a MOVING tag by spec, and a
+    # caller pinning `@v1` for the workflow must get the same `v1` tools. A
+    # change to this repo is validated by moving `v1`, never by pointing one
+    # caller at a branch.
+    - name: Check out family-tools
+      uses: actions/checkout@v5
+      with:
+        repository: noy-db/.github
+        ref: v1
+        path: .family-tools
+
+    # changesets inspects the git working tree; an untracked .family-tools/ in
+    # the caller's checkout would show up there. Excluding it locally leaves the
+    # caller's committed .gitignore alone.
+    - name: Hide .family-tools from the caller's git
+      shell: bash
+      run: echo '/.family-tools/' >> .git/info/exclude
+
+    - name: Set up Node
+      uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # `corepack prepare --activate` with no spec activates the version in the
+    # caller's `packageManager` field, so pnpm's version is the repo's business
+    # and never this action's.
+    #
+    # Skipped entirely when install is false: that job runs node and nothing
+    # else, and the manager input is still the DEFAULT there — the config has
+    # not been read yet, so an npm repo would otherwise be told to set up pnpm.
+    - name: Activate pnpm
+      if: inputs.manager == 'pnpm' && inputs.install != 'false'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! node -e "process.exit(require('./package.json').packageManager?0:1)"; then
+          echo '::error::no `packageManager` field in package.json — corepack has no version to activate'
+          exit 1
+        fi
+        corepack enable
+        corepack prepare --activate
+        pnpm --version
+
+    - name: Locate the pnpm store
+      if: inputs.manager == 'pnpm' && inputs.install != 'false'
+      id: store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache the pnpm store
+      if: inputs.manager == 'pnpm' && inputs.install != 'false'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-node${{ inputs.node-version }}-
+          pnpm-store-${{ runner.os }}-
+
+    - name: Install the caller's dependencies
+      if: inputs.install != 'false'
+      shell: bash
+      env:
+        MANAGER: ${{ inputs.manager }}
+        FROZEN: ${{ inputs.frozen }}
+      run: |
+        set -euo pipefail
+        if [ "$MANAGER" = 'pnpm' ]; then
+          if [ "$FROZEN" = 'false' ]; then
+            pnpm install --no-frozen-lockfile
+          else
+            pnpm install --frozen-lockfile
+          fi
+        else
+          npm ci
+        fi
+
+    # semver, and nothing else. The tools are `private: true` and never publish,
+    # so a dev-dependency install here would only slow every job down.
+    - name: Install family-tools
+      shell: bash
+      working-directory: .family-tools/tools
+      run: npm install --omit=dev --no-audit --no-fund
+
+    - name: Expose the CLI path
+      id: tools
+      shell: bash
+      run: echo 'path=.family-tools/tools/cli.mjs' >> "$GITHUB_OUTPUT"

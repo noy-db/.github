@@ -1,0 +1,54 @@
+name: Family config
+description: >-
+  Read the caller's family.config.json through family-tools and expose it as
+  step outputs. Requires setup-family to have run first.
+
+inputs:
+  tools:
+    description: Path to the family-tools CLI.
+    required: false
+    default: .family-tools/tools/cli.mjs
+
+outputs:
+  layout:
+    description: "workspace | flat | single"
+    value: ${{ steps.read.outputs.layout }}
+  manager:
+    description: "pnpm | npm"
+    value: ${{ steps.read.outputs.manager }}
+  binds:
+    description: >-
+      The @noy-db/hub seam this repo binds. The literal string `null` when it
+      binds none — the config's value is JSON null, and a step output is a
+      string either way.
+    value: ${{ steps.read.outputs.binds }}
+  publishes:
+    description: "'true' or 'false'"
+    value: ${{ steps.read.outputs.publishes }}
+  gates:
+    description: The gates to run, as a JSON array string for fromJSON().
+    value: ${{ steps.read.outputs.gates }}
+  localChecks:
+    description: The repo's own check commands, as a JSON array string.
+    value: ${{ steps.read.outputs.localChecks }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read family.config.json
+      id: read
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+        cfg=$(node "$TOOLS" config --root . --print)
+        {
+          echo "layout=$(jq -r '.layout' <<<"$cfg")"
+          echo "manager=$(jq -r '.manager' <<<"$cfg")"
+          echo "binds=$(jq -r '.binds' <<<"$cfg")"
+          echo "publishes=$(jq -r '.publishes' <<<"$cfg")"
+          echo "gates=$(jq -c '.gates' <<<"$cfg")"
+          echo "localChecks=$(jq -c '.localChecks' <<<"$cfg")"
+        } >> "$GITHUB_OUTPUT"
+        echo "$cfg"

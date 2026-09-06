@@ -1,0 +1,109 @@
+# This repo's own CI. It cannot call the reusable workflows above — they check
+# out `noy-db/.github@v1`, which is the thing under test — so it tests the parts
+# that can be tested in place: the tools' suite, the gates against the fixtures,
+# and the two properties this repo must never lose.
+name: Self test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tools:
+    name: tools suite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      # `npm install` first, always: the suite imports semver, and running
+      # `node --test test/` bare passes locally only because a stale
+      # node_modules happens to be there.
+      - name: Test
+        working-directory: tools
+        run: |
+          npm install
+          npm test
+
+  discover:
+    name: discover fixtures
+    runs-on: ubuntu-latest
+    outputs:
+      fixtures: ${{ steps.list.outputs.fixtures }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: list
+        # A fixture opts into the gate matrix by carrying an expected.json; one
+        # without it is exercised by the unit suite only.
+        run: |
+          set -euo pipefail
+          fixtures=$(ls -d tools/fixtures/*/expected.json | xargs -n1 dirname | xargs -n1 basename | jq -R . | jq -sc .)
+          echo "fixtures=$fixtures" >> "$GITHUB_OUTPUT"
+          echo "$fixtures"
+
+  fixtures:
+    name: fixture ${{ matrix.fixture }}
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: ${{ fromJSON(needs.discover.outputs.fixtures) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install family-tools
+        working-directory: tools
+        run: npm install --omit=dev --no-audit --no-fund
+      - name: Run each gate and compare the exit code
+        working-directory: tools
+        env:
+          FIXTURE: ${{ matrix.fixture }}
+        run: |
+          set -euo pipefail
+          expected="fixtures/$FIXTURE/expected.json"
+          failed=0
+          # Read through process substitution, not a pipe: a pipeline would run
+          # the loop in a subshell and `failed` would come back 0 every time.
+          while read -r gate want; do
+            set +e
+            node cli.mjs "$gate" --root "fixtures/$FIXTURE"
+            got=$?
+            set -e
+            if [ "$got" != "$want" ]; then
+              echo "::error::$FIXTURE/$gate exited $got, expected $want"
+              failed=1
+            else
+              echo "ok: $FIXTURE/$gate exited $got"
+            fi
+          done < <(jq -r '.gates | to_entries[] | "\(.key) \(.value)"' "$expected")
+          exit "$failed"
+
+  no-publish-here:
+    name: no publish, no soft gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Both patterns are written with a bracket class so this file does not
+      # match its own greps. Writing them literally would make the check fail
+      # on itself, and the obvious "fix" is to stop scanning this file — which
+      # is how a self-test quietly stops testing anything.
+      - name: No raw publish in any workflow
+        run: |
+          if grep -rnE 'npm[[:space:]]+publish' .github/workflows; then
+            echo '::error::publishing goes through changesets in snapshot.yml, never a raw registry write'
+            exit 1
+          fi
+      - name: No soft gates in ci.yml
+        run: |
+          if grep -rn 'continue[-]on-error' .github/workflows/ci.yml; then
+            echo '::error::a gate that cannot fail the build is not a gate'
+            exit 1
+          fi

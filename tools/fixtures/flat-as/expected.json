@@ -1,0 +1,4 @@
+{
+  "note": "as-bad value-imports the store contract and ships no conformance fixture; as-good and the exempt as-aws-s3 are clean.",
+  "gates": { "architecture": 1 }
+}

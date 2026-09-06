@@ -1,0 +1,4 @@
+{
+  "note": "on-no-hub imports hub nowhere and owes no peer; on-no-hub-but-imports is exempt. Green — this is the fixture that proves the gate does not over-report.",
+  "gates": { "architecture": 0 }
+}

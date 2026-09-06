@@ -1,0 +1,45 @@
+# Does every package still COMPILE against the oldest @noy-db/* versions its
+# peer ranges admit?
+#
+# Its own workflow, not a CI gate: it installs published versions from the
+# network and rewrites the tree to do it, which is not something a per-push job
+# should be doing. Callers wire it to `schedule` and `workflow_dispatch`.
+name: Peer floor
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        required: false
+        default: '22'
+
+jobs:
+  config:
+    name: config
+    runs-on: ubuntu-latest
+    outputs:
+      manager: ${{ steps.cfg.outputs.manager }}
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+          install: 'false'
+      - id: cfg
+        uses: noy-db/.github/actions/family-config@v1
+
+  peer-floor:
+    name: peer floor
+    needs: config
+    runs-on: ubuntu-latest
+    steps:
+      # The floor install mutates the tree, so the lockfile is not frozen here.
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+          frozen: 'false'
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Check peer floors
+        run: node .family-tools/tools/cli.mjs peer-floor --root .

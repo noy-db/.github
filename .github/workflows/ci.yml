@@ -1,0 +1,139 @@
+# The family CI. A member repo's own .github/workflows/ci.yml is three lines:
+#
+#   jobs:
+#     ci:
+#       uses: noy-db/.github/.github/workflows/ci.yml@v1
+#       secrets: inherit
+#
+# Everything this workflow runs is decided by the caller's family.config.json.
+# No job here may be made soft (the flag that lets a failed step pass): a gate
+# that cannot fail the build is not a gate, and the self-test greps this file
+# for that flag by name.
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node major for the non-matrix jobs.
+        type: string
+        required: false
+        default: '22'
+
+# Each job re-runs setup-family and the build. There is no artifact passing
+# between them on purpose: a rebuild costs a cached install, and an artifact
+# round-trip is one more thing that can be stale and green.
+jobs:
+  config:
+    name: config
+    runs-on: ubuntu-latest
+    outputs:
+      layout: ${{ steps.cfg.outputs.layout }}
+      manager: ${{ steps.cfg.outputs.manager }}
+      publishes: ${{ steps.cfg.outputs.publishes }}
+      gates: ${{ steps.cfg.outputs.gates }}
+      localChecks: ${{ steps.cfg.outputs.localChecks }}
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+          install: 'false'
+      - id: cfg
+        uses: noy-db/.github/actions/family-config@v1
+
+  build:
+    name: build
+    needs: config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+      # --if-present throughout: noy-db-docs defines no `build`, and a member
+      # that later drops a script must not turn this into a red build.
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+
+  test:
+    name: test (node ${{ matrix.node }})
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ matrix.node }}
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Test
+        run: ${{ needs.config.outputs.manager }} run --if-present test
+
+  gates:
+    name: gate ${{ matrix.gate }}
+    needs: [config, build]
+    if: needs.config.outputs.gates != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      # Every gate reports independently: one red gate must not hide the state
+      # of the others, which is the whole reason they are separate jobs.
+      fail-fast: false
+      matrix:
+        gate: ${{ fromJSON(needs.config.outputs.gates) }}
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+      # codemod-rows reads its maps from the INSTALLED @noy-db/hub; the build
+      # is what makes a workspace's own dist resolvable to the source walk.
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Run the gate
+        run: node .family-tools/tools/cli.mjs ${{ matrix.gate }} --root .
+
+  local-checks:
+    name: local checks
+    needs: [config, build]
+    if: needs.config.outputs.localChecks != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Run the repo's own checks
+        # The command list arrives through the environment, never interpolated
+        # into the script text: a config value must be data here, not shell.
+        env:
+          CHECKS: ${{ needs.config.outputs.localChecks }}
+        run: |
+          set -euo pipefail
+          mapfile -t cmds < <(jq -r '.[]' <<<"$CHECKS")
+          for cmd in "${cmds[@]}"; do
+            echo "::group::$cmd"
+            bash -c "$cmd"
+            echo "::endgroup::"
+          done
+
+  lint-typecheck:
+    name: lint & typecheck
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Lint
+        run: ${{ needs.config.outputs.manager }} run --if-present lint
+      - name: Typecheck
+        run: ${{ needs.config.outputs.manager }} run --if-present typecheck

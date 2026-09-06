@@ -1,0 +1,143 @@
+# Publish a `0.0.0-dev-<sha>` snapshot of every publishable package to the org's
+# GitHub Packages npm registry, under the `dev` dist-tag.
+#
+# Nothing here touches public npm, and nothing here commits: every manifest edit
+# is made on the runner and thrown away with it. The repo's own dev pins stay
+# exact PUBLIC versions.
+name: Snapshot
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        required: false
+        default: '22'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: config
+    runs-on: ubuntu-latest
+    outputs:
+      layout: ${{ steps.cfg.outputs.layout }}
+      manager: ${{ steps.cfg.outputs.manager }}
+      publishes: ${{ steps.cfg.outputs.publishes }}
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+          install: 'false'
+      - id: cfg
+        uses: noy-db/.github/actions/family-config@v1
+
+  # A repo that declares `publishes: false` (noy-db-docs, doi-db) is not a
+  # failure case — it says so in its config and this run is a green no-op.
+  no-op:
+    name: nothing to publish
+    needs: config
+    if: needs.config.outputs.publishes != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo 'family.config.json declares publishes false — no snapshot to cut.' >> "$GITHUB_STEP_SUMMARY"
+
+  snapshot:
+    name: snapshot
+    needs: config
+    if: needs.config.outputs.publishes == 'true'
+    runs-on: ubuntu-latest
+    env:
+      MANAGER: ${{ needs.config.outputs.manager }}
+      LAYOUT: ${{ needs.config.outputs.layout }}
+      REGISTRY: https://npm.pkg.github.com
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build
+        run: $MANAGER run --if-present build
+
+      # Runner-only manifest surgery: leave pre mode, write one changeset naming
+      # every publishable package, point publishConfig at the org registry,
+      # append the dev clause to every @noy-db peer range, privatise unscoped
+      # names. Idempotent — it prints what it CHANGED, so a re-run prints empty
+      # lists rather than claiming work it did not do.
+      - name: Prepare (runner-only manifest rewrite)
+        run: |
+          set -euo pipefail
+          node .family-tools/tools/cli.mjs snapshot-prepare --root . --tag dev --registry "$REGISTRY" | tee /tmp/prepare.json
+          {
+            echo '### Snapshot prepare'
+            echo '```json'
+            cat /tmp/prepare.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The repo may or may not already own changesets. `single` has no
+      # workspace, so `-w` is an error there rather than a no-op.
+      - name: Ensure @changesets/cli
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(require('./package.json').devDependencies?.['@changesets/cli']?0:1)"; then
+            echo '@changesets/cli is already a devDependency'
+          elif [ "$MANAGER" = 'pnpm' ] && [ "$LAYOUT" != 'single' ]; then
+            pnpm add -w -D @changesets/cli@2
+          elif [ "$MANAGER" = 'pnpm' ]; then
+            pnpm add -D @changesets/cli@2
+          else
+            npm install --no-save --no-audit --no-fund @changesets/cli@2
+          fi
+
+      - name: Version
+        run: npx --no-install changeset version --snapshot dev
+
+      # The token is expanded by npm from the environment at request time, so
+      # the file itself carries the variable name and never the secret.
+      - name: Authenticate to the org registry
+        run: printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' >> ~/.npmrc
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npx --no-install changeset publish --tag dev --no-git-tag
+
+      # Read AFTER `changeset version`, so the summary names the versions
+      # changesets actually wrote rather than versions this run recomputed.
+      - name: Record
+        run: |
+          set -euo pipefail
+          {
+            echo '### Published @ dev'
+            echo '```'
+            node .family-tools/tools/cli.mjs snapshot-report --root .
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The in-repo half of the verification: every name this run published
+      # must be resolvable from the registry under `dev`. The cross-repo half —
+      # installing a sibling's snapshot alongside this one WITHOUT
+      # --legacy-peer-deps — needs a token this workflow does not have.
+      - name: Verify the published names resolve
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          names=$(node .family-tools/tools/cli.mjs snapshot-report --root . --names)
+          probe="$RUNNER_TEMP/probe"
+          mkdir -p "$probe"
+          cd "$probe"
+          npm init -y >/dev/null
+          printf '@noy-db:registry=%s\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' "$REGISTRY" > .npmrc
+          for p in $names; do
+            echo "$p@dev -> $(npm view "$p@dev" version)"
+          done
