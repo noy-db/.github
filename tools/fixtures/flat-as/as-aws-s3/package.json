@@ -1,0 +1,1 @@
+{ "name": "@noy-db/as-aws-s3", "version": "0.7.0", "peerDependencies": { "@noy-db/hub": "^0.7.0" } }

@@ -1,0 +1,2 @@
+{ "layout": "flat", "manager": "pnpm", "binds": "@noy-db/hub/as", "publishes": true,
+  "gates": ["architecture"], "exempt": ["as-aws-s3"], "conformanceKit": "runFormatConformanceTests" }

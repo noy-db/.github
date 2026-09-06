@@ -1,0 +1,15 @@
+{
+  "name": "@noy-db/family-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "family-tools": "./cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "semver": "^7.6.0"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/vLannaAi/.github/tools/schema.json",
+  "title": "family.config.json",
+  "description": "Per-repo configuration for @noy-db/family-tools gates.",
+  "type": "object",
+  "required": ["layout", "manager", "binds", "publishes", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "layout": {
+      "description": "Where packages live: a pnpm workspace under packages/, flat at the repo root, or a single package at the root.",
+      "enum": ["workspace", "flat", "single"]
+    },
+    "manager": {
+      "description": "The package manager CI installs with.",
+      "enum": ["pnpm", "npm"]
+    },
+    "binds": {
+      "description": "The published @noy-db/hub seam this repo binds, or null when it binds none.",
+      "enum": [
+        "@noy-db/hub/to",
+        "@noy-db/hub/as",
+        "@noy-db/hub/on",
+        "@noy-db/hub/at",
+        "@noy-db/hub/cargo",
+        "@noy-db/hub/introspection",
+        null
+      ]
+    },
+    "publishes": {
+      "description": "Whether this repo publishes packages to npm.",
+      "type": "boolean"
+    },
+    "gates": {
+      "description": "The family gates CI runs for this repo.",
+      "type": "array",
+      "items": {
+        "enum": ["architecture", "versions-uniform", "declared-deps", "codemod-rows"]
+      }
+    },
+    "localChecks": {
+      "description": "Shell commands CI's gates job runs after the family gates (for a repo with its own check script).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "exempt": {
+      "description": "Package directory names exempt from the seam and peer rules.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "conformanceKit": {
+      "description": "Test symbol the as-conformance-fixture rule looks for; omit to disable that rule.",
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{ "layout": "single", "manager": "pnpm", "binds": "@noy-db/hub/cargo", "publishes": true, "gates": ["architecture"] }

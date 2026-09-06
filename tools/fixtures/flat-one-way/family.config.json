@@ -1,0 +1,1 @@
+{ "layout": "flat", "manager": "pnpm", "binds": null, "publishes": true, "gates": ["architecture"] }

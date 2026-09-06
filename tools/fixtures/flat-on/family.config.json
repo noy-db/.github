@@ -1,0 +1,2 @@
+{ "layout": "flat", "manager": "pnpm", "binds": "@noy-db/hub/on", "publishes": true,
+  "gates": ["architecture"], "exempt": ["on-no-hub-but-imports"] }

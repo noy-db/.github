@@ -1,0 +1,3 @@
+{ "name": "@noy-db/to-bad", "version": "0.7.0",
+  "dependencies": { "@noy-db/hub": "^0.7.0", "tweetnacl": "^1.0.3" },
+  "peerDependencies": { "@noy-db/hub": "^0.7.0" } }
