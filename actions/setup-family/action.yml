@@ -15,8 +15,10 @@ inputs:
   frozen:
     description: >-
       'true' installs the caller with a frozen lockfile (the CI default). Set to
-      'false' only for a job that deliberately mutates the lockfile — the
-      snapshot run adds @changesets/cli.
+      'false' for a caller that needs `pnpm install --no-frozen-lockfile` because
+      the job deliberately mutates the tree — today that is peer-floor.yml, which
+      installs each declared floor in turn. The snapshot run does NOT use it: it
+      reaches changesets through `npx --no-install`, touching no lockfile.
     required: false
     default: 'true'
   install:

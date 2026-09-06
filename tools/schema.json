@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/vLannaAi/.github/tools/schema.json",
+  "$id": "https://github.com/noy-db/.github/tools/schema.json",
   "title": "family.config.json",
   "description": "Per-repo configuration for @noy-db/family-tools gates.",
   "type": "object",

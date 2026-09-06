@@ -149,6 +149,19 @@ jobs:
           cd "$probe"
           npm init -y >/dev/null
           printf '@noy-db:registry=%s\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' "$REGISTRY" > .npmrc
+          # `echo "… $(npm view …)"` cannot fail this step: a command
+          # substitution inside an argument loses its exit status, so an
+          # unresolvable name printed an empty version and the run went green.
+          # Capture per name, then fail after the loop so the summary lists
+          # EVERY missing name rather than only the first.
+          missing=0
           for p in $names; do
-            echo "$p@dev -> $(npm view "$p@dev" version)"
+            v=$(npm view "$p@dev" version 2>/dev/null || true)
+            if [ -z "$v" ]; then
+              echo "::error::$p@dev not resolvable after publish"
+              missing=1
+            else
+              echo "$p@dev -> $v"
+            fi
           done
+          [ "$missing" -eq 0 ] || exit 1

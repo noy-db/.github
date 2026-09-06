@@ -11,7 +11,10 @@ Everything a member repo's CI does is decided by that repo's
 
 ## The caller shape
 
-Three files in a member repo, about thirty lines total.
+Up to four files in a member repo, about forty lines total. `ci.yml` everywhere;
+`peer-floor.yml` wherever the repo binds a seam; `snapshot.yml` and
+`prune-snapshots.yml` in every **publishing** repo — the pair goes together,
+since prune only ever deletes what snapshot published.
 
 ```yaml
 # .github/workflows/ci.yml
@@ -41,21 +44,35 @@ jobs:
 ```
 
 ```yaml
-# .github/workflows/maintenance.yml
-name: Maintenance
+# .github/workflows/peer-floor.yml   — repos whose family.config.json `binds` is not null
+name: peer-floor
 on:
   workflow_dispatch:
   schedule: [{ cron: '0 6 * * 1' }]
 jobs:
   peer-floor:
     uses: noy-db/.github/.github/workflows/peer-floor.yml@v1
-  prune-snapshots:
+```
+
+```yaml
+# .github/workflows/prune-snapshots.yml   — repos with publishes: true
+name: prune-snapshots
+on:
+  workflow_dispatch:
+  schedule: [{ cron: '0 7 * * 1' }]
+jobs:
+  prune:
     # Same reason as above: the caller grants the token scope, and the reusable
     # workflow can only narrow what it is handed.
     permissions: { contents: read, packages: write }
     uses: noy-db/.github/.github/workflows/prune-snapshots.yml@v1
     with: { keep: 20 }
 ```
+
+⚠️ Prune is a **separate caller, not a job inside `peer-floor.yml`** — its gate is
+`publishes`, not `binds`. noy-db core publishes and binds nothing, so a prune job
+riding on the peer-floor caller would never run for the biggest publisher in the
+family.
 
 `v1` is a **moving tag**. A change here is validated by moving `v1`; no caller
 pins a branch, and `setup-family` hardcodes `v1` for the tools checkout so a
