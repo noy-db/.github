@@ -5,7 +5,9 @@
 name: Self test
 
 on:
+  # `main` only on push: a branch with an open PR would otherwise run this twice.
   push:
+    branches: [main]
   pull_request:
 
 jobs:

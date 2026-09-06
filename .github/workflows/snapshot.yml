@@ -1,4 +1,5 @@
-# Publish a `0.0.0-dev-<sha>` snapshot of every publishable package to the org's
+# Publish a `0.0.0-dev-<YYYYMMDDHHmmss>` snapshot of every publishable package
+# to the org's
 # GitHub Packages npm registry, under the `dev` dist-tag.
 #
 # Nothing here touches public npm, and nothing here commits: every manifest edit
@@ -82,6 +83,16 @@ jobs:
             cat /tmp/prepare.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # A range it could not widen is a hard stop, not a note: that package
+          # will not co-install with its snapshot peers except under
+          # --legacy-peer-deps, which is the one property this channel exists
+          # to keep true. Publishing anyway would ship a set that only looks
+          # installable.
+          if ! jq -e '.skipped | length == 0' /tmp/prepare.json >/dev/null; then
+            echo '::error::snapshot-prepare could not widen these peer ranges:'
+            jq -r '.skipped[] | "  " + .' /tmp/prepare.json
+            exit 1
+          fi
 
       # The repo may or may not already own changesets. `single` has no
       # workspace, so `-w` is an error there rather than a no-op.

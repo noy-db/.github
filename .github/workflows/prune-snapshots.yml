@@ -1,4 +1,4 @@
-# Delete old `0.0.0-dev-<sha>` versions from the org's GitHub Packages npm
+# Delete old `0.0.0-dev-<YYYYMMDDHHmmss>` versions from the org's GitHub Packages npm
 # registry, keeping the newest `keep` per package.
 #
 # With the caller's GITHUB_TOKEN this can only see the packages the CALLING repo
@@ -45,9 +45,13 @@ jobs:
             const org = context.repo.owner
             const repo = context.repo.repo
 
+            // May 403 under a repo-scoped GITHUB_TOKEN — that means a PAT is
+            // needed, not that there is nothing to prune. Do not "handle" the
+            // 403 into an empty list.
             const packages = await github.paginate('GET /orgs/{org}/packages', {
               org,
               package_type: 'npm',
+              per_page: 100,
             })
 
             // For an npm package in an org registry the API's `package_name` is

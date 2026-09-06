@@ -33,6 +33,9 @@ on:
   workflow_dispatch:
 jobs:
   snapshot:
+    # A called workflow can only REDUCE the caller's token, never elevate it —
+    # so `packages: write` has to be granted here, not in the reusable workflow.
+    permissions: { contents: read, packages: write }
     uses: noy-db/.github/.github/workflows/snapshot.yml@v1
     secrets: inherit
 ```
@@ -47,6 +50,9 @@ jobs:
   peer-floor:
     uses: noy-db/.github/.github/workflows/peer-floor.yml@v1
   prune-snapshots:
+    # Same reason as above: the caller grants the token scope, and the reusable
+    # workflow can only narrow what it is handed.
+    permissions: { contents: read, packages: write }
     uses: noy-db/.github/.github/workflows/prune-snapshots.yml@v1
     with: { keep: 20 }
 ```
@@ -94,7 +100,7 @@ No job may be made soft. A gate that cannot fail the build is not a gate.
 
 ### `.github/workflows/snapshot.yml`
 
-Publishes `0.0.0-dev-<sha>` of every publishable package to
+Publishes `0.0.0-dev-<YYYYMMDDHHmmss>` of every publishable package to
 `https://npm.pkg.github.com` under the `dev` dist-tag. A repo with
 `publishes: false` gets a green no-op job.
 
@@ -133,8 +139,9 @@ fixture carrying an `expected.json`, and two properties this repo must not lose
 
 ## The snapshot version scheme
 
-`0.0.0-dev-<short sha>`, produced by `changeset version --snapshot dev`, tagged
-`dev`. `0.0.0-*` sorts below every real release, so a snapshot can never win a
+`0.0.0-dev-<YYYYMMDDHHmmss>` — changesets' default snapshot suffix is a UTC
+datetime, not a commit sha — produced by `changeset version --snapshot dev` and
+tagged `dev`. `0.0.0-*` sorts below every real release, so a snapshot can never win a
 `^` range by accident, and the dev clause `>=0.0.0-dev-0 <0.0.1` that
 `snapshot-prepare` appends to peer ranges admits snapshots **and nothing else**.
 
