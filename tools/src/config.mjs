@@ -2,57 +2,42 @@
 //
 // Hand-rolled rather than ajv: the schema is a dozen keys of enums and this
 // package is copied into CI for eleven repos, where one fewer transitive
-// dependency is worth more than a general validator. `schema.json` sits beside
-// this file for editors and reviewers; ⚠️ the two are kept in step BY HAND —
-// change one, change the other.
+// dependency is worth more than a general validator.
+//
+// The VALIDATION LOGIC is hand-rolled; the ENUMS ARE NOT. Every allowed value,
+// the required-key list and the optional-key list are read out of `schema.json`
+// at load time, so the schema is the single source of truth and the two cannot
+// drift. Adding a gate or a seam means editing schema.json only.
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 export const CONFIG_FILE = 'family.config.json'
 
-const LAYOUTS = ['workspace', 'flat', 'single']
-const MANAGERS = ['pnpm', 'npm']
-const BINDS = [
-  '@noy-db/hub/to',
-  '@noy-db/hub/as',
-  '@noy-db/hub/on',
-  '@noy-db/hub/at',
-  '@noy-db/hub/cargo',
-  '@noy-db/hub/introspection',
-  null,
-]
-const GATES = ['architecture', 'versions-uniform', 'declared-deps', 'codemod-rows']
-
-const REQUIRED = ['layout', 'manager', 'binds', 'publishes', 'gates']
-const OPTIONAL = ['localChecks', 'exempt', 'conformanceKit']
+const SCHEMA = JSON.parse(readFileSync(new URL('../schema.json', import.meta.url), 'utf8'))
+const PROPS = SCHEMA.properties
+const LAYOUTS = PROPS.layout.enum
+const MANAGERS = PROPS.manager.enum
+const BINDS = PROPS.binds.enum
+const GATES = PROPS.gates.items.enum
+const REQUIRED = SCHEMA.required
+const OPTIONAL = Object.keys(PROPS).filter((k) => !REQUIRED.includes(k))
 
 const show = (v) => (v === null ? 'null' : JSON.stringify(v))
 const oneOf = (values) => values.map(show).join(', ')
 
-function bad(msg) {
-  throw new Error(`${CONFIG_FILE}: ${msg}`)
-}
-
-function checkEnum(key, value, values) {
-  if (!values.includes(value)) bad(`${key} is ${show(value)}; expected one of ${oneOf(values)}.`)
-}
-
-function checkStringArray(key, value) {
-  if (!Array.isArray(value)) bad(`${key} must be an array of strings.`)
-  for (const item of value)
-    if (typeof item !== 'string') bad(`${key} must be an array of strings; found ${show(item)}.`)
-}
-
-export function loadConfig(root) {
-  const file = join(root, CONFIG_FILE)
-  if (!existsSync(file)) throw new Error(`${CONFIG_FILE}: not found at ${root}`)
-
-  let cfg
-  try {
-    cfg = JSON.parse(readFileSync(file, 'utf8'))
-  } catch (err) {
-    bad(`is not valid JSON — ${err.message}`)
+function validate(cfg, label) {
+  const bad = (msg) => {
+    throw new Error(`${label}: ${msg}`)
   }
+  const checkEnum = (key, value, values) => {
+    if (!values.includes(value)) bad(`${key} is ${show(value)}; expected one of ${oneOf(values)}.`)
+  }
+  const checkStringArray = (key, value) => {
+    if (!Array.isArray(value)) bad(`${key} must be an array of strings.`)
+    for (const item of value)
+      if (typeof item !== 'string') bad(`${key} must be an array of strings; found ${show(item)}.`)
+  }
+
   if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) bad('must be a JSON object.')
 
   for (const key of REQUIRED) if (!(key in cfg)) bad(`missing required key ${key}.`)
@@ -81,3 +66,21 @@ export function loadConfig(root) {
     conformanceKit: cfg.conformanceKit ?? null,
   }
 }
+
+// Load EXACTLY this file. `--config path/to/x.json` must read x.json — an
+// earlier version took the file's DIRECTORY and re-appended family.config.json,
+// so a nonexistent --config path silently loaded a different, valid config and
+// exited 0.
+export function loadConfigFile(file) {
+  const label = basename(file)
+  if (!existsSync(file)) throw new Error(`${label}: not found at ${file}`)
+  let cfg
+  try {
+    cfg = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (err) {
+    throw new Error(`${label}: is not valid JSON — ${err.message}`)
+  }
+  return validate(cfg, label)
+}
+
+export const loadConfig = (root) => loadConfigFile(join(root, CONFIG_FILE))

@@ -44,7 +44,7 @@
       "items": { "type": "string" }
     },
     "exempt": {
-      "description": "Package directory names exempt from the seam and peer rules.",
+      "description": "Package directory names excluded from every architecture rule.",
       "type": "array",
       "items": { "type": "string" }
     },

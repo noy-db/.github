@@ -13,6 +13,7 @@ function gate(name, overrides = {}) {
   const root = join(FIXTURES, name)
   const { failures } = runArchitecture(root, { ...loadConfig(root), ...overrides })
   return {
+    failures,
     rules: failures.map((f) => f.rule).sort(),
     wheres: failures.map((f) => basename(f.where)).sort(),
   }
@@ -31,12 +32,20 @@ test('flat-as: value-import of the store contract and a missing conformance fixt
 })
 
 test('flat-as: `import type` from the store contract is allowed', () => {
-  const { wheres } = gate('flat-as')
-  assert.equal(wheres.filter((w) => w === 'as-good').length, 0)
+  // Assert on the FULL `where`, not its basename: a source-file failure reports
+  // `as-good/src/index.ts`, whose basename is `index.ts` and never `as-good`, so
+  // a basename filter here would read 0 whether or not type-detection works.
+  const { failures } = gate('flat-as')
+  assert.deepEqual(
+    failures.filter((f) => f.where.startsWith('as-good')),
+    [],
+  )
 })
 
 test('flat-on: a package that imports hub nowhere owes no peer', () => {
-  assert.deepEqual(gate('flat-on'), { rules: [], wheres: [] })
+  const { rules, wheres } = gate('flat-on')
+  assert.deepEqual(rules, [])
+  assert.deepEqual(wheres, [])
 })
 
 test('flat-on: a package that DOES import hub without a peer fails hub-peer-range', () => {

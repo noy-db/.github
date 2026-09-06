@@ -4,8 +4,8 @@
 // The ONLY place in this package that prints or exits. Every gate module
 // returns { failures } so a test can assert on the data instead of scraping
 // stdout.
-import { resolve, dirname } from 'node:path'
-import { loadConfig } from './src/config.mjs'
+import { resolve } from 'node:path'
+import { loadConfig, loadConfigFile } from './src/config.mjs'
 import { runArchitecture } from './src/gates/architecture.mjs'
 
 // Task 3 adds versions-uniform, declared-deps, codemod-rows, peer-floor,
@@ -43,8 +43,9 @@ function main(argv) {
     return 2
   }
   const root = resolve(opts.root)
-  // --config names the config FILE; loadConfig takes the directory holding it.
-  const cfg = loadConfig(opts.config ? dirname(resolve(opts.config)) : root)
+  // --config names the config FILE and is read verbatim; without it the config
+  // is family.config.json inside --root.
+  const cfg = opts.config ? loadConfigFile(resolve(opts.config)) : loadConfig(root)
 
   // `config` is not a gate — it loads, validates, and (with --print) emits the
   // resolved config as JSON for Task 4's composite action to read.
