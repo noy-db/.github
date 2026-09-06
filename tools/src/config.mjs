@@ -56,6 +56,8 @@ function validate(cfg, label) {
 
   if ('localChecks' in cfg) checkStringArray('localChecks', cfg.localChecks)
   if ('exempt' in cfg) checkStringArray('exempt', cfg.exempt)
+  if ('allowHubRoot' in cfg && typeof cfg.allowHubRoot !== 'boolean')
+    bad(`allowHubRoot is ${show(cfg.allowHubRoot)}; expected a boolean.`)
   if ('conformanceKit' in cfg && typeof cfg.conformanceKit !== 'string')
     bad(`conformanceKit is ${show(cfg.conformanceKit)}; expected a string.`)
 
@@ -63,6 +65,7 @@ function validate(cfg, label) {
     ...cfg,
     localChecks: cfg.localChecks ?? [],
     exempt: cfg.exempt ?? [],
+    allowHubRoot: cfg.allowHubRoot ?? false,
     conformanceKit: cfg.conformanceKit ?? null,
   }
 }

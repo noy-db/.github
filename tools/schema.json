@@ -48,6 +48,10 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "allowHubRoot": {
+      "description": "Adds the @noy-db/hub ROOT BARREL to the subpaths this repo's bound seam may import. doi-db binds /to but needs isConflictError, which /to does not export.",
+      "type": "boolean"
+    },
     "conformanceKit": {
       "description": "Test symbol the as-conformance-fixture rule looks for; omit to disable that rule.",
       "type": "string"

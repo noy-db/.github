@@ -1,0 +1,2 @@
+{ "layout": "single", "manager": "pnpm", "binds": "@noy-db/hub/to", "publishes": false,
+  "gates": ["architecture"], "allowHubRoot": true }

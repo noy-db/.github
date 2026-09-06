@@ -8,6 +8,24 @@
 //     through `exempt` in family.config.json, where the repo that owns the
 //     exemption can see it.
 //
+// ⛔ WHAT THIS FILE GOT WRONG ONCE, so nobody re-derives it. The first version
+// modelled EVERY seam as an allow-list of subpaths. Measured against the real
+// trees (task 5, finding A) that produced 35 false failures: 16 on noy-db-as,
+// 18 on noy-db-on, 1 on doi-db — all of them correct code. Two causes:
+//
+//   1. `no-runtime-store-import` is NOT an allow-list. noy-db-as's own script
+//      says so in its header: it is "NOT noy-db-to's `to-only` rule … Ported
+//      verbatim it fails on correct code here, because an `as-*` package binds
+//      its own port and legitimately reads shared types from the root." Its
+//      real predicate is a single prohibition — a VALUE import of
+//      '@noy-db/hub/to' — and every other hub subpath is fine.
+//   2. Type-only imports were only forgiven on the subpaths a `typeOnly` set
+//      listed. They erase at build and move no data, so they cross no runtime
+//      boundary AT ALL; 14 of the 16 noy-db-as failures were `import type`.
+//
+// So a seam is now one of two SHAPES, and the difference is load-bearing:
+// `storeOnly` (a prohibition) or `allowed` (an allow-list).
+//
 // It never calls process.exit and never prints: it returns failures, so a test
 // can assert on them. cli.mjs owns the exit code.
 import { join, relative, basename } from 'node:path'
@@ -16,19 +34,49 @@ import { packageDirs, readPkg, walkTs, HUB_IMPORT_RE } from '../walk.mjs'
 
 const BANNED = new Set(['crypto-js', 'node-forge', 'tweetnacl', 'bcryptjs', 'bcrypt'])
 
-// Which hub subpaths each bound layer may import.
-//   allowed   — value or type, freely
-//   typeOnly  — the types erase at build and move no data, so `import type` is
-//               fine while a VALUE import is a layer violation
+// How each bound layer is constrained.
+//   storeOnly — a PROHIBITION: only a VALUE import of the store contract
+//               ('@noy-db/hub/to') fails. Every other subpath, root barrel
+//               included, is allowed. This is noy-db-as/-on/-at's real rule.
+//   allowed   — an ALLOW-LIST of subpaths ('' is the root barrel). Anything
+//               outside it fails. noy-db-to and klum-db work this way.
 //   peerOptionalWhenUnused — the `on-*` family has standalone primitives that
-//               import hub nowhere; they owe no peer (noy-db-on)
+//               import hub nowhere; they owe no peer (noy-db-on).
+//
+// `allowHubRoot` in family.config.json adds '' to an allow-list seam. doi-db
+// binds /to and its own script reads
+// `ALLOWED_HUB = new Set(['@noy-db/hub', '@noy-db/hub/to'])`, because hub's
+// contract (#935) requires `isConflictError` and /to does not export it. It is
+// config rather than a hard-coded row so the repo that needs the exemption is
+// the one that declares it.
 const SEAM = {
   '@noy-db/hub/to': { allowed: new Set(['/to']), rule: 'to-only' },
-  '@noy-db/hub/as': { allowed: new Set(['/as']), typeOnly: new Set(['/to']), rule: 'no-runtime-store-import' },
-  '@noy-db/hub/on': { allowed: new Set(['/on']), typeOnly: new Set(['/to']), rule: 'no-runtime-store-import', peerOptionalWhenUnused: true },
-  '@noy-db/hub/at': { allowed: new Set(['/at']), typeOnly: new Set(['/to']), rule: 'no-runtime-store-import' },
+  '@noy-db/hub/as': { storeOnly: true, rule: 'no-runtime-store-import' },
+  '@noy-db/hub/on': { storeOnly: true, rule: 'no-runtime-store-import', peerOptionalWhenUnused: true },
+  '@noy-db/hub/at': { storeOnly: true, rule: 'no-runtime-store-import' },
   '@noy-db/hub/cargo': { allowed: new Set(['', '/cargo', '/pod', '/share-link']), rule: 'klum-only-seam' },
   '@noy-db/hub/introspection': { allowed: new Set(['/introspection']), rule: 'introspection-only' },
+}
+
+/**
+ * Is this hub import type-only?
+ *
+ * ⚠️ Scan BACKWARD from the specifier to its own `import`/`export` keyword. One
+ * regex over the statement looks right and is wrong: `[^;]*` matches NEWLINES,
+ * so it spans from an unrelated multi-line import at the top of the file down
+ * to a `from` clause far below and misses the `type` keyword that is actually
+ * there. That produced a false positive on real code (noy-db-as's own header).
+ *
+ * Only a `from` match can be type-only. A bare side-effect import
+ * (`import '@noy-db/hub'`) and a `require()` have no type form, and scanning
+ * backward from those would find some UNRELATED earlier `import type` and
+ * forgive a real runtime import.
+ */
+function isTypeOnlyImport(code, match) {
+  if (!/^from/.test(match[0])) return false
+  const kw = Math.max(code.lastIndexOf('import', match.index), code.lastIndexOf('export', match.index))
+  if (kw === -1) return false
+  return /^(?:import|export)\s+type\b/.test(code.slice(kw, match.index + match[0].length))
 }
 
 export function runArchitecture(root, cfg) {
@@ -68,24 +116,25 @@ export function runArchitecture(root, cfg) {
         fail('hub-peer-range', `${pj.name} peers @noy-db/hub as "${peer}"; expected a semver range.`, dir)
 
       // seam rule — which hub subpaths this layer may import.
+      const allowed = seam.allowed && new Set(cfg.allowHubRoot ? ['', ...seam.allowed] : seam.allowed)
       walkTs(join(dir, 'src'), (file, code) => {
         const re = new RegExp(HUB_IMPORT_RE.source, 'g')
         let m
         while ((m = re.exec(code)) !== null) {
           const sub = m[1] ?? ''
-          if (seam.allowed.has(sub)) continue
-          if (seam.typeOnly?.has(sub)) {
-            // ⚠️ Scan BACKWARD from the specifier to its own `import` keyword.
-            // One regex over the statement looks right and is wrong: `[^;]*`
-            // matches NEWLINES, so it spans from an unrelated multi-line import
-            // at the top of the file down to a `from` clause far below and
-            // misses the `type` keyword that is actually there.
-            const kw = code.lastIndexOf('import', m.index)
-            if (kw !== -1 && /^import\s+type\b/.test(code.slice(kw, m.index + m[0].length))) continue
-            fail(seam.rule, `${pj.name}: value-imports '@noy-db/hub${sub}'; use \`import type\` — this layer never performs storage I/O.`, file)
+          // Types cross NO runtime boundary, on any subpath and under any
+          // seam, so this precedes every other test rather than being a
+          // per-subpath exemption.
+          if (isTypeOnlyImport(code, m)) continue
+
+          if (seam.storeOnly) {
+            if (sub === '/to')
+              fail(seam.rule, `${pj.name}: value-imports '@noy-db/hub/to' — this layer never performs storage I/O; use \`import type\` for the contract's types.`, file)
             continue
           }
-          fail(seam.rule, `${pj.name}: imports '@noy-db/hub${sub}' — allowed: ${[...seam.allowed].map((s) => `@noy-db/hub${s}`).join(', ')}.`, file)
+
+          if (allowed.has(sub)) continue
+          fail(seam.rule, `${pj.name}: imports '@noy-db/hub${sub}' — allowed: ${[...allowed].map((s) => `@noy-db/hub${s}`).join(', ')}.`, file)
         }
       })
     }

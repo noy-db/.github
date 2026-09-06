@@ -74,3 +74,18 @@ test('workspace: a private package is not part of the line', (t) => {
 test('single: one manifest cannot disagree with itself — trivially green', () => {
   assert.deepEqual(gate(join(FIXTURES, 'single-cargo')), [])
 })
+
+test('workspace: a pnpm `workspace:` range is always satisfied, never invalid semver', (t) => {
+  // MEASURED against noy-db core (task 5, finding B): 88 false failures, every
+  // one `range "workspace:^" is not a valid semver range`. pnpm rewrites a
+  // workspace: range to the sibling's real version at publish, so it ALWAYS
+  // admits what it points at. The root CLAUDE.md mandates this spelling.
+  const root = copyFixture(t, 'workspace')
+  for (const range of ['workspace:*', 'workspace:^', 'workspace:~', 'workspace:^0.7.0']) {
+    editPkg(root, 'packages/a', (j) => {
+      j.peerDependencies['@noy-db/hub'] = range
+      j.devDependencies['@noy-db/hub'] = range
+    })
+    assert.deepEqual(gate(root), [], `range ${range} should be accepted`)
+  }
+})

@@ -1,0 +1,2 @@
+{ "name": "@doi-db/daemon", "version": "0.7.0", "private": true,
+  "peerDependencies": { "@noy-db/hub": "^0.7.0" } }

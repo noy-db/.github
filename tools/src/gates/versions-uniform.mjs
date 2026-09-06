@@ -67,6 +67,20 @@ export function runVersionsUniform(root, cfg) {
         // both satisfy 9.9.9. The leading form is what a widening prepended
         // instead of appended leaves behind, and it reads even more like a
         // real range than the trailing one does.
+        // pnpm's workspace protocol ALWAYS admits the sibling it points at:
+        // pnpm rewrites `workspace:^` to the sibling's real version at publish,
+        // so the range cannot be stale by construction and there is nothing for
+        // this gate to check. semver has no opinion on it and reports it as
+        // invalid — MEASURED against noy-db core (task 5, finding B): 88 false
+        // failures, every one `range "workspace:^" is not a valid semver range`,
+        // on the spelling the root CLAUDE.md actually mandates.
+        //
+        // Accepted on EVERY dependency block, peers included. That is not this
+        // gate going soft on peers: the architecture gate's `hub-peer-range`
+        // already fails a `workspace:` hub peer in a satellite, which is the
+        // case that matters, and it fails it by name.
+        if (range.startsWith('workspace:')) continue
+
         const trimmed = range.trim()
         if (trimmed.endsWith('||') || trimmed.startsWith('||')) {
           failures.push(
