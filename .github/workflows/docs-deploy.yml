@@ -1,0 +1,77 @@
+# Deploy the docs site to AWS: two static builds of apps/docs, one per tier,
+# synced to two private S3 buckets behind CloudFront (spec
+# 2026-09-07-docs-hosting-design, AWS variant). Credentials come from GitHub's
+# OIDC token exchanged for the role `noy-db-docs-deploy` in account 069025084726;
+# the role's trust policy admits only repo noy-db/docs on branch main, and its
+# permissions are limited to the two buckets and the two distributions. No
+# stored AWS key exists anywhere in the family.
+#
+# `DOCS_TIER` is the build-time switch the docs app reads (public = open core
+# only; internal = everything + downloads). Until the app implements the switch
+# both builds are identical, which is harmless: the internal site is gated at
+# the edge by basic auth regardless of content.
+name: docs-deploy
+on:
+  workflow_call:
+    inputs:
+      node-version: { type: string, default: '22' }
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+  ROLE_ARN: arn:aws:iam::069025084726:role/noy-db-docs-deploy
+  PUBLIC_BUCKET: noy-db.lanna.ai
+  PUBLIC_DIST: E2Y4DU1SYDDCV
+  DEV_BUCKET: noy-db-dev.lanna.ai
+  DEV_DIST: E225PXU9ID6VRT
+
+jobs:
+  deploy:
+    name: deploy ${{ matrix.tier }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [public, internal]
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Generate (${{ matrix.tier }})
+        env:
+          DOCS_TIER: ${{ matrix.tier }}
+        run: pnpm --filter @noy-db-docs/site generate
+
+      - name: Locate the output
+        id: out
+        shell: bash
+        run: |
+          set -euo pipefail
+          d=apps/docs/.output/public
+          [ -f "$d/index.html" ] || { echo "::error::no index.html under $d — did generate run?"; exit 1; }
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync to S3 and invalidate
+        shell: bash
+        env:
+          TIER: ${{ matrix.tier }}
+        run: |
+          set -euo pipefail
+          if [ "$TIER" = public ]; then bucket=$PUBLIC_BUCKET; dist=$PUBLIC_DIST; else bucket=$DEV_BUCKET; dist=$DEV_DIST; fi
+          # Long-cache the fingerprinted assets, never cache HTML: a deploy must
+          # be visible on the next request, and Nuxt's _nuxt/* names change per build.
+          aws s3 sync "${{ steps.out.outputs.dir }}" "s3://$bucket" --delete --exclude '*.html' \
+            --cache-control 'public,max-age=31536000,immutable'
+          aws s3 sync "${{ steps.out.outputs.dir }}" "s3://$bucket" --exclude '*' --include '*.html' \
+            --cache-control 'no-cache' --content-type 'text/html; charset=utf-8'
+          id=$(aws cloudfront create-invalidation --distribution-id "$dist" --paths '/*' --query Invalidation.Id --output text)
+          echo "invalidation $id on $dist" >> "$GITHUB_STEP_SUMMARY"
