@@ -84,7 +84,10 @@ jobs:
           # be visible on the next request, and Nuxt's _nuxt/* names change per build.
           aws s3 sync "${{ steps.out.outputs.dir }}" "s3://$bucket" --delete --exclude '*.html' \
             --cache-control 'public,max-age=31536000,immutable'
-          aws s3 sync "${{ steps.out.outputs.dir }}" "s3://$bucket" --exclude '*' --include '*.html' \
+          # --delete on BOTH passes: the first pass excludes HTML, so without it a
+          # removed page (measured: /migration/ after its section was deleted) stays
+          # live forever.
+          aws s3 sync "${{ steps.out.outputs.dir }}" "s3://$bucket" --delete --exclude '*' --include '*.html' \
             --cache-control 'no-cache' --content-type 'text/html; charset=utf-8'
           id=$(aws cloudfront create-invalidation --distribution-id "$dist" --paths '/*' --query Invalidation.Id --output text)
           echo "invalidation $id on $dist" >> "$GITHUB_STEP_SUMMARY"
