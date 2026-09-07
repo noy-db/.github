@@ -46,6 +46,19 @@ jobs:
           DOCS_TIER: ${{ matrix.tier }}
         run: pnpm --filter @noy-db-docs/site generate
 
+      # The public build must contain no premium page. The guard script ships
+      # with the docs app (apps/docs/scripts/check-tier-output.mjs) and greps the
+      # generated HTML for the premium marker; it is skipped, loudly, while the
+      # app does not carry it yet.
+      - name: Tier guard
+        shell: bash
+        env:
+          DOCS_TIER: ${{ matrix.tier }}
+        run: |
+          set -euo pipefail
+          if [ -f apps/docs/scripts/check-tier-output.mjs ]; then node apps/docs/scripts/check-tier-output.mjs
+          else echo "::warning::no tier guard in this checkout — both tiers are identical"; fi
+
       - name: Locate the output
         id: out
         shell: bash
