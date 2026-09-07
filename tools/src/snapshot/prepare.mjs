@@ -89,6 +89,12 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
     for (const [name, range] of Object.entries(json.peerDependencies ?? {})) {
       if (!name.startsWith('@noy-db/')) continue
       if (range.includes(DEV_MARKER)) continue // already widened — a re-run
+      // A workspace-protocol peer is not a semver range yet: changesets turns
+      // `workspace:^` into `^<snapshot version>` during `changeset version`,
+      // which already admits every later snapshot. Appending the clause here
+      // yields `workspace:^ || …`, which changesets rejects as
+      // "Invalid comparator: ^" — measured on noy-db/core's first snapshot.
+      if (range.startsWith('workspace:')) continue
       // A range with a dangling "||" must NOT be widened. Appending would give
       // "^0.7.0 ||  || >=0.0.0-dev-0 <0.0.1", which semver reads as "*" — so a
       // malformed range would be silently upgraded into an unbounded one, and

@@ -143,3 +143,16 @@ test('snapshotReport: what prepareSnapshot privatised drops out of the report', 
   prepareSnapshot(root, cfg, OPTS)
   assert.deepEqual(snapshotReport(root, cfg), ['@noy-db/a@0.7.0', '@noy-db/hub@0.7.0'])
 })
+
+test('prepareSnapshot: a workspace: peer range is left for changesets, not widened', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const p = join(root, 'packages', 'a', 'package.json')
+  const j = JSON.parse(readFileSync(p, 'utf8'))
+  j.peerDependencies = { ...(j.peerDependencies ?? {}), '@noy-db/hub': 'workspace:^' }
+  writeFileSync(p, JSON.stringify(j, null, 2) + '\n')
+  const out = prepareSnapshot(root, loadConfig(root), { tag: 'dev', registry: 'https://npm.pkg.github.com' })
+  const after = JSON.parse(readFileSync(p, 'utf8'))
+  assert.equal(after.peerDependencies['@noy-db/hub'], 'workspace:^')
+  assert.ok(!out.widened.includes('@noy-db/a'))
+  assert.deepEqual(out.skipped, [])
+})
