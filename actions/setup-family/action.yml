@@ -62,6 +62,11 @@ runs:
       uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
+        # setup-node@v5 caches the package manager by default, and to do that it
+        # runs `pnpm store path` BEFORE corepack has activated pnpm — measured on
+        # the first real run: "Unable to locate executable file: pnpm". The
+        # composite caches the pnpm store itself, below.
+        package-manager-cache: false
 
     # `corepack prepare --activate` with no spec activates the version in the
     # caller's `packageManager` field, so pnpm's version is the repo's business
