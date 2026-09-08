@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // family-tools <command> [--root path] [--config path] [--print]
-//                        [--dry-run] [--tag t] [--registry url] [--names]
+//                        [--dry-run] [--tag t] [--registry url] [--names] [--version]
 //
 // The ONLY place in this package that prints or exits. Every gate module
 // returns { failures } so a test can assert on the data instead of scraping
@@ -41,6 +41,7 @@ function parseArgs(argv) {
     print: false,
     dryRun: false,
     names: false,
+    version: false,
     tag: 'dev',
     registry: 'https://npm.pkg.github.com',
   }
@@ -53,6 +54,7 @@ function parseArgs(argv) {
     else if (a === '--print') opts.print = true
     else if (a === '--dry-run') opts.dryRun = true
     else if (a === '--names') opts.names = true
+    else if (a === '--version') opts.version = true
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`)
     else if (opts.gate === undefined) opts.gate = a
     else throw new Error(`unexpected argument ${a}`)
@@ -66,7 +68,7 @@ function parseArgs(argv) {
 
 const usage = () =>
   `usage: family-tools <${COMMANDS.join('|')}> [--root path] [--config path] [--print]\n` +
-  `                    [--dry-run] [--tag t] [--registry url] [--names]`
+  `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]`
 
 function report(label, failures) {
   for (const f of failures) console.error(`✗ ${line(f)}`)
@@ -110,7 +112,7 @@ function main(argv) {
   }
 
   if (opts.gate === 'snapshot-report') {
-    for (const l of snapshotReport(root, cfg, { names: opts.names })) console.log(l)
+    for (const l of snapshotReport(root, cfg, { names: opts.names, version: opts.version })) console.log(l)
     return 0
   }
 

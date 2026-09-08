@@ -1,0 +1,115 @@
+# Publish every publishable package at ITS MANIFEST VERSION to public npm under
+# `next`, with provenance. Reusable; a member calls it from a workflow that
+# fires ONLY on `release: [published]` — a GitHub Release the user publishes.
+# That is the family's "never publish without the user's word" rule, moved from
+# prose into a trigger.
+#
+# This is spec 04's FALLBACK shape (OIDC provenance + a user-published Release),
+# taken because the staged-publish probe has not been run. When it has, `stage`
+# replaces the publish step and NPM_TOKEN disappears; the verify job stays.
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '22'
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      manager: ${{ steps.cfg.outputs.manager }}
+      layout: ${{ steps.cfg.outputs.layout }}
+      publishes: ${{ steps.cfg.outputs.publishes }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: cfg
+        uses: noy-db/.github/actions/family-config@v1
+
+  verify:
+    needs: config
+    if: needs.config.outputs.publishes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+
+      # A public cut is never the first build of a commit.
+      - name: The same commit has a green dev snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/snapshot.yml/runs?head_sha=${GITHUB_SHA}&status=success" --jq '.total_count')
+          if [ "$n" = "0" ]; then
+            echo "::error::no successful snapshot.yml run for ${GITHUB_SHA} — cut a dev snapshot first"
+            exit 1
+          fi
+
+      - name: The line is uniform, and its licence ships
+        run: |
+          node .family-tools/tools/cli.mjs versions-uniform --root .
+          node .family-tools/tools/cli.mjs check-license --root .
+
+      # The Release's tag is the version the user chose to publish; the manifest
+      # is the version that will actually go out. They must be the same string.
+      - name: The Release tag equals the manifest version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version=$(node .family-tools/tools/cli.mjs snapshot-report --root . --version)
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::release tag_name ${TAG} != manifest version ${version}"
+            exit 1
+          fi
+
+      - name: CHANGELOG has a section for this version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          if ! grep -rqE "^## +\[?${v//./\\.}\]?" --include=CHANGELOG.md .; then
+            echo "::error::no CHANGELOG.md section titled ${v}"
+            exit 1
+          fi
+
+  publish:
+    needs: [config, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      # The token is expanded by npm from the environment at request time, so
+      # the file itself carries the variable name and never the secret.
+      - name: Authenticate to public npm
+        run: printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' >> ~/.npmrc
+      - name: Publish @ next, with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+        run: npx --no-install changeset publish --tag next --no-git-tag
+      - name: Record
+        run: |
+          {
+            echo '### Published @ next'
+            echo '```'
+            node .family-tools/tools/cli.mjs snapshot-report --root .
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -156,3 +156,13 @@ test('prepareSnapshot: a workspace: peer range is left for changesets, not widen
   assert.ok(!out.widened.includes('@noy-db/a'))
   assert.deepEqual(out.skipped, [])
 })
+
+test('report --version prints the line version once, and refuses a non-uniform line', (t) => {
+  const root = copyFixture(t, 'workspace')
+  assert.deepEqual(snapshotReport(root, loadConfig(root), { version: true }), ['0.7.0'])
+  const p = join(root, 'packages/a/package.json')
+  const json = JSON.parse(readFileSync(p, 'utf8'))
+  json.version = '0.6.0'
+  writeFileSync(p, JSON.stringify(json, null, 2) + '\n')
+  assert.throws(() => snapshotReport(root, loadConfig(root), { version: true }), /not uniform: 0\.6\.0, 0\.7\.0|not uniform: 0\.7\.0, 0\.6\.0/)
+})
