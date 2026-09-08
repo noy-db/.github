@@ -58,6 +58,8 @@ test('both the reusable workflow and the caller grant actions: read — verify r
   // must say it. Measured: 403 in core's first verify run with only
   // contents + id-token.
   for (const y of [release(), caller()]) {
-    assert.match(y, /^permissions:\n(?:  [a-z-]+: [a-z]+.*\n)*  actions: read/m)
+    // Comment lines are allowed inside the block: the caller template carries
+    // a two-line explanation of why the grant must be repeated there.
+    assert.match(y, /^permissions:\n(?:  (?:[a-z-]+: [a-z]+.*|#.*)\n)*  actions: read/m)
   }
 })
