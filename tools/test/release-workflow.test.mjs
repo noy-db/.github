@@ -51,3 +51,13 @@ test('every job that reads family-tools starts with setup-family, never a bare c
   assert.equal(jobs.length, 3)
   for (const job of jobs) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v1/)
 })
+
+test('both the reusable workflow and the caller grant actions: read — verify reads the snapshot run through the API', () => {
+  // An explicit permissions block grants nothing it does not name, and a
+  // reusable workflow's permissions are capped by its caller's. Both sides
+  // must say it. Measured: 403 in core's first verify run with only
+  // contents + id-token.
+  for (const y of [release(), caller()]) {
+    assert.match(y, /^permissions:\n(?:  [a-z-]+: [a-z]+.*\n)*  actions: read/m)
+  }
+})

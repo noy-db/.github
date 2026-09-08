@@ -19,9 +19,16 @@ on:
       NPM_TOKEN:
         required: true
 
+# actions: read is what lets verify ask the API for this commit's snapshot run.
+# An explicit permissions block grants NOTHING it does not name, and a reusable
+# workflow's grants are capped by its caller's — so the caller template carries
+# the same three lines. Measured: core's rerun failed verify with "Resource not
+# accessible by integration (HTTP 403)" while the identical query passed from a
+# laptop token.
 permissions:
   contents: read
   id-token: write
+  actions: read
 
 jobs:
   config:
