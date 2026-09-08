@@ -1,4 +1,9 @@
 {
   "note": "a green workspace: the line is uniform, every import is declared, and codemod-rows resolves hub through the committed node_modules symlink (so this needs no install).",
-  "gates": { "versions-uniform": 0, "declared-deps": 0, "codemod-rows": 0 }
+  "gates": {
+    "versions-uniform": 0,
+    "declared-deps": 0,
+    "codemod-rows": 0,
+    "check-license": 1
+  }
 }

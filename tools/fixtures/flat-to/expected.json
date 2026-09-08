@@ -1,4 +1,7 @@
 {
   "note": "to-bad trips to-only, hub-peer-range and no-crypto-deps.",
-  "gates": { "architecture": 1 }
+  "gates": {
+    "architecture": 1,
+    "check-license": 1
+  }
 }

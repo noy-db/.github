@@ -1,4 +1,7 @@
 {
   "note": "doi-db's shape: binds /to but allowHubRoot lets it value-import the root barrel for isConflictError, which /to does not export. Green.",
-  "gates": { "architecture": 0 }
+  "gates": {
+    "architecture": 0,
+    "check-license": 1
+  }
 }

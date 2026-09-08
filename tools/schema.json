@@ -4,16 +4,29 @@
   "title": "family.config.json",
   "description": "Per-repo configuration for @noy-db/family-tools gates.",
   "type": "object",
-  "required": ["layout", "manager", "binds", "publishes", "gates"],
+  "required": [
+    "layout",
+    "manager",
+    "binds",
+    "publishes",
+    "gates"
+  ],
   "additionalProperties": false,
   "properties": {
     "layout": {
       "description": "Where packages live: a pnpm workspace under packages/, flat at the repo root, or a single package at the root.",
-      "enum": ["workspace", "flat", "single"]
+      "enum": [
+        "workspace",
+        "flat",
+        "single"
+      ]
     },
     "manager": {
       "description": "The package manager CI installs with.",
-      "enum": ["pnpm", "npm"]
+      "enum": [
+        "pnpm",
+        "npm"
+      ]
     },
     "binds": {
       "description": "The published @noy-db/hub seam this repo binds, or null when it binds none.",
@@ -35,18 +48,28 @@
       "description": "The family gates CI runs for this repo.",
       "type": "array",
       "items": {
-        "enum": ["architecture", "versions-uniform", "declared-deps", "codemod-rows"]
+        "enum": [
+          "architecture",
+          "versions-uniform",
+          "declared-deps",
+          "codemod-rows",
+          "check-license"
+        ]
       }
     },
     "localChecks": {
       "description": "Shell commands CI's gates job runs after the family gates (for a repo with its own check script).",
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "exempt": {
       "description": "Package directory names excluded from every architecture rule.",
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "allowHubRoot": {
       "description": "Adds the @noy-db/hub ROOT BARREL to the subpaths this repo's bound seam may import. doi-db binds /to but needs isConflictError, which /to does not export.",
@@ -55,6 +78,13 @@
     "conformanceKit": {
       "description": "Test symbol the as-conformance-fixture rule looks for; omit to disable that rule.",
       "type": "string"
+    },
+    "license": {
+      "description": "The licence tier every publishable manifest must declare, and whose LICENSE + NOTICE must ship. Default Apache-2.0 (open core); premium repos say FSL-1.1-Apache-2.0.",
+      "enum": [
+        "Apache-2.0",
+        "FSL-1.1-Apache-2.0"
+      ]
     }
   }
 }

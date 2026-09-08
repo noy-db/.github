@@ -11,6 +11,7 @@ import { runArchitecture } from './src/gates/architecture.mjs'
 import { runVersionsUniform } from './src/gates/versions-uniform.mjs'
 import { runDeclaredDeps } from './src/gates/declared-deps.mjs'
 import { runCodemodRows } from './src/gates/codemod-rows.mjs'
+import { runCheckLicense } from './src/gates/check-license.mjs'
 import { runPeerFloor } from './src/gates/peer-floor.mjs'
 import { prepareSnapshot } from './src/snapshot/prepare.mjs'
 import { snapshotReport } from './src/snapshot/report.mjs'
@@ -27,6 +28,7 @@ const GATES = {
   'versions-uniform': { label: 'Version invariants', run: runVersionsUniform },
   'declared-deps': { label: 'Declared dependencies', run: runDeclaredDeps },
   'codemod-rows': { label: 'Codemod rows', run: runCodemodRows },
+  'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
 }
 
 const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report']

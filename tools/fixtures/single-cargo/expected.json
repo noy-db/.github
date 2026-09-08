@@ -1,4 +1,7 @@
 {
   "note": "src/b.ts imports @noy-db/hub/to, which a /cargo-binding repo may not; /cargo and /pod pass.",
-  "gates": { "architecture": 1 }
+  "gates": {
+    "architecture": 1,
+    "check-license": 1
+  }
 }
