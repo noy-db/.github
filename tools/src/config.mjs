@@ -53,6 +53,8 @@ function validate(cfg, label) {
   if (!Array.isArray(cfg.gates)) bad('gates must be an array.')
   for (const gate of cfg.gates)
     if (!GATES.includes(gate)) bad(`gates contains ${show(gate)}; expected one of ${oneOf(GATES)}.`)
+  if (cfg.license !== undefined && !PROPS.license.enum.includes(cfg.license))
+    bad(`license is ${show(cfg.license)}; expected one of ${oneOf(PROPS.license.enum)}.`)
 
   if ('localChecks' in cfg) checkStringArray('localChecks', cfg.localChecks)
   if ('exempt' in cfg) checkStringArray('exempt', cfg.exempt)

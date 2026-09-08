@@ -1,4 +1,7 @@
 {
   "note": "two @noy-db packages import the lobby, so one-way fires twice; the lobby importing itself does not.",
-  "gates": { "architecture": 1 }
+  "gates": {
+    "architecture": 1,
+    "check-license": 1
+  }
 }
