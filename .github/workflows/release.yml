@@ -31,7 +31,14 @@ jobs:
       layout: ${{ steps.cfg.outputs.layout }}
       publishes: ${{ steps.cfg.outputs.publishes }}
     steps:
-      - uses: actions/checkout@v4
+      # family-config reads the config THROUGH family-tools, so the tools must
+      # be on disk first — setup-family checks out and fetches them; a bare
+      # actions/checkout does not. Measured: core's first release run
+      # (34245176242) failed here with "Cannot find module .family-tools/tools/cli.mjs".
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+          install: 'false'
       - id: cfg
         uses: noy-db/.github/actions/family-config@v1
 
