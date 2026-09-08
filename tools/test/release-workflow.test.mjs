@@ -40,3 +40,14 @@ test('the caller template fires only on a published GitHub Release', () => {
   assert.match(c, /uses: noy-db\/\.github\/\.github\/workflows\/release\.yml@v1/)
   assert.match(c, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/)
 })
+
+test('every job that reads family-tools starts with setup-family, never a bare checkout', () => {
+  const y = release()
+  // family-config and every cli.mjs call need .family-tools on disk; only
+  // setup-family puts it there. A bare checkout passed the self-test and
+  // failed the first real release at the config job.
+  assert.doesNotMatch(y, /uses: actions\/checkout@/)
+  const jobs = y.split(/^  [a-z-]+:\n/m).slice(1)
+  assert.equal(jobs.length, 3)
+  for (const job of jobs) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v1/)
+})
