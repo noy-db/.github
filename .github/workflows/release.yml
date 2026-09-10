@@ -117,7 +117,7 @@ jobs:
       # No provenance: npm's sigstore check requires a PUBLIC source repository
       # (E422 "Unsupported GitHub Actions source repository visibility: private",
       # measured on core 2026-09-10, 0 of 34 published). The member repos are
-      # private by ruling (D3). Re-add NPM_CONFIG_PROVENANCE: true only when a
+      # private by ruling (D3). Re-add npm's provenance env flag only when a
       # repo is public — the id-token grant stays so that flip is one line.
       - name: Publish @ next
         env:
