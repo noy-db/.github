@@ -15,12 +15,14 @@ test('release.yml is workflow_call only — it cannot fire on its own', () => {
   assert.doesNotMatch(y, /^\s+(push|pull_request|release|schedule|workflow_dispatch):/m)
 })
 
-test('release.yml publishes exactly once, with provenance, to the public registry, under next', () => {
+test('release.yml publishes exactly once, without provenance, to the public registry, under next', () => {
   const y = release()
   const publishes = y.match(/changeset publish/g) ?? []
   assert.equal(publishes.length, 1)
   assert.match(y, /changeset publish --tag next --no-git-tag/)
-  assert.match(y, /NPM_CONFIG_PROVENANCE: true/)
+  // Provenance is OFF: npm rejects it for private source repos (E422), and the
+  // member repos are private. Asserted absent so nobody re-adds it by habit.
+  assert.doesNotMatch(y, /NPM_CONFIG_PROVENANCE/)
   assert.match(y, /id-token: write/)
   assert.doesNotMatch(y, /npm publish/) // spec 04 verification 3, kept
   assert.doesNotMatch(y, /npm\.pkg\.github\.com/) // never the org registry from here
