@@ -103,6 +103,10 @@ jobs:
   publish:
     needs: [config, verify]
     runs-on: ubuntu-latest
+    env:
+      MANAGER: ${{ needs.config.outputs.manager }}
+      LAYOUT: ${{ needs.config.outputs.layout }}
+      REGISTRY: https://npm.pkg.github.com
     steps:
       - uses: noy-db/.github/actions/setup-family@v1
         with:
@@ -110,6 +114,23 @@ jobs:
           node-version: ${{ inputs.node-version }}
       - name: Build
         run: ${{ needs.config.outputs.manager }} run --if-present build
+      # Flat repos do not carry @changesets/cli as a devDependency (core does);
+      # `npx --no-install changeset` then fails with "could not determine
+      # executable to run". Same step as snapshot.yml — lifted verbatim.
+      # Measured: to's first release run, 2026-09-11, publish job, 0 of 18.
+      - name: Ensure @changesets/cli
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(require('./package.json').devDependencies?.['@changesets/cli']?0:1)"; then
+            echo '@changesets/cli is already a devDependency'
+          elif [ "$MANAGER" = 'pnpm' ] && [ "$LAYOUT" != 'single' ]; then
+            pnpm add -w -D @changesets/cli@2
+          elif [ "$MANAGER" = 'pnpm' ]; then
+            pnpm add -D @changesets/cli@2
+          else
+            npm install --no-save --no-audit --no-fund @changesets/cli@2
+          fi
+
       # The token is expanded by npm from the environment at request time, so
       # the file itself carries the variable name and never the secret.
       - name: Authenticate to public npm

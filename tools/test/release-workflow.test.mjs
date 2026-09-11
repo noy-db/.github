@@ -65,3 +65,10 @@ test('both the reusable workflow and the caller grant actions: read — verify r
     assert.match(y, /^permissions:\n(?:  (?:[a-z-]+: [a-z]+.*|#.*)\n)*  actions: read/m)
   }
 })
+
+test('the publish job ensures @changesets/cli is installed before calling it — flat repos do not carry it', () => {
+  const y = release()
+  const publish = y.slice(y.indexOf('\n  publish:'))
+  assert.match(publish, /@changesets\/cli/)
+  assert.ok(publish.indexOf('@changesets/cli') < publish.indexOf('changeset publish'), 'install step must precede the publish step')
+})
