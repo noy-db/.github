@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig, loadConfigFile } from '../src/config.mjs'
+import { copyFixture } from './helpers.mjs'
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SCHEMA = JSON.parse(readFileSync(join(PKG, 'schema.json'), 'utf8'))
@@ -132,4 +133,15 @@ test('a key declared in schema.json is never reported as unknown', () => {
   } catch (err) {
     for (const key of known) assert.match(err.message, new RegExp(key))
   }
+})
+
+test('publicRelease: absent means true; a boolean is accepted; anything else is rejected', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  assert.equal(loadConfig(root).publicRelease, true)
+  const p = join(root, 'family.config.json')
+  const base = JSON.parse(readFileSync(p, 'utf8'))
+  writeFileSync(p, JSON.stringify({ ...base, publicRelease: false }))
+  assert.equal(loadConfig(root).publicRelease, false)
+  writeFileSync(p, JSON.stringify({ ...base, publicRelease: 'private' }))
+  assert.throws(() => loadConfig(root), /publicRelease is "private"; expected a boolean/)
 })

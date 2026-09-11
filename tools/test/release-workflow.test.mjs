@@ -50,8 +50,12 @@ test('every job that reads family-tools starts with setup-family, never a bare c
   // failed the first real release at the config job.
   assert.doesNotMatch(y, /uses: actions\/checkout@/)
   const jobs = y.split(/^  [a-z-]+:\n/m).slice(1)
-  assert.equal(jobs.length, 3)
-  for (const job of jobs) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v1/)
+  assert.equal(jobs.length, 4)
+  // Only jobs that READ family-tools need it on disk; a job that merely
+  // refuses (publicRelease: false) has no tools to read.
+  const readers = jobs.filter((job) => /cli\.mjs|family-config/.test(job))
+  assert.ok(readers.length >= 3, 'config, verify and publish all read family-tools')
+  for (const job of readers) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v1/)
 })
 
 test('both the reusable workflow and the caller grant actions: read — verify reads the snapshot run through the API', () => {
@@ -76,4 +80,14 @@ test('the publish job ensures @changesets/cli is installed before calling it —
 test('the Record step runs even when publish fails — a partial publish must leave a summary', () => {
   const y = release()
   assert.match(y, /- name: Record\n\s+if: always\(\)/)
+})
+
+test('release.yml refuses a repo that declares publicRelease: false, on both verify and publish', () => {
+  const y = release()
+  assert.match(y, /publicRelease: \$\{\{ steps\.cfg\.outputs\.publicRelease \}\}/)
+  assert.match(y, /refused:\n\s+needs: config\n\s+if: needs\.config\.outputs\.publicRelease == 'false'/)
+  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  publish:'))
+  const publish = y.slice(y.indexOf('\n  publish:'))
+  assert.match(verify, /publicRelease != 'false'/)
+  assert.match(publish, /if: needs\.config\.outputs\.publicRelease != 'false'/)
 })

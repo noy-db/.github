@@ -85,6 +85,10 @@
         "Apache-2.0",
         "FSL-1.1-Apache-2.0"
       ]
+    },
+    "publicRelease": {
+      "description": "Whether this repo's artefacts may go to PUBLIC npm. Absent means true. A premium repo (lobby) says false: release.yml then refuses to run its verify/publish jobs. Independent of `publishes`, which says whether the repo cuts artefacts at all (lobby: true \u2014 its @dev snapshots).",
+      "type": "boolean"
     }
   }
 }

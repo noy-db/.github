@@ -58,6 +58,8 @@ function validate(cfg, label) {
 
   if ('localChecks' in cfg) checkStringArray('localChecks', cfg.localChecks)
   if ('exempt' in cfg) checkStringArray('exempt', cfg.exempt)
+  if ('publicRelease' in cfg && typeof cfg.publicRelease !== 'boolean')
+    bad(`publicRelease is ${show(cfg.publicRelease)}; expected a boolean.`)
   if ('allowHubRoot' in cfg && typeof cfg.allowHubRoot !== 'boolean')
     bad(`allowHubRoot is ${show(cfg.allowHubRoot)}; expected a boolean.`)
   if ('conformanceKit' in cfg && typeof cfg.conformanceKit !== 'string')
@@ -68,6 +70,9 @@ function validate(cfg, label) {
     localChecks: cfg.localChecks ?? [],
     exempt: cfg.exempt ?? [],
     allowHubRoot: cfg.allowHubRoot ?? false,
+    // Absent means public: the eight existing members change nothing. Only a
+    // premium repo declares false, and that declaration lives in its tree.
+    publicRelease: cfg.publicRelease ?? true,
     conformanceKit: cfg.conformanceKit ?? null,
   }
 }
