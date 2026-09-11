@@ -143,7 +143,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx --no-install changeset publish --tag next --no-git-tag
+      # Runs even when publish fails: a partial publish (to, 2026-09-11: 11 of 18
+      # on npm E409 while changesets reported 0) must still leave a record. The
+      # absence of a summary renders identically to "nothing happened".
       - name: Record
+        if: always()
         run: |
           {
             echo '### Published @ next'
