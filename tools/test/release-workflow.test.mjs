@@ -72,3 +72,8 @@ test('the publish job ensures @changesets/cli is installed before calling it —
   assert.match(publish, /@changesets\/cli/)
   assert.ok(publish.indexOf('@changesets/cli') < publish.indexOf('changeset publish'), 'install step must precede the publish step')
 })
+
+test('the Record step runs even when publish fails — a partial publish must leave a summary', () => {
+  const y = release()
+  assert.match(y, /- name: Record\n\s+if: always\(\)/)
+})
