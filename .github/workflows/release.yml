@@ -106,7 +106,6 @@ jobs:
     env:
       MANAGER: ${{ needs.config.outputs.manager }}
       LAYOUT: ${{ needs.config.outputs.layout }}
-      REGISTRY: https://npm.pkg.github.com
     steps:
       - uses: noy-db/.github/actions/setup-family@v1
         with:
