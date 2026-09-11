@@ -10,6 +10,9 @@ inputs:
     default: .family-tools/tools/cli.mjs
 
 outputs:
+  publicRelease:
+    description: "'true' or 'false' — whether artefacts may go to public npm (absent in config means true)"
+    value: ${{ steps.read.outputs.publicRelease }}
   layout:
     description: "workspace | flat | single"
     value: ${{ steps.read.outputs.layout }}
@@ -48,6 +51,7 @@ runs:
           echo "manager=$(jq -r '.manager' <<<"$cfg")"
           echo "binds=$(jq -r '.binds' <<<"$cfg")"
           echo "publishes=$(jq -r '.publishes' <<<"$cfg")"
+          echo "publicRelease=$(jq -r '.publicRelease' <<<"$cfg")"
           echo "gates=$(jq -c '.gates' <<<"$cfg")"
           echo "localChecks=$(jq -c '.localChecks' <<<"$cfg")"
         } >> "$GITHUB_OUTPUT"

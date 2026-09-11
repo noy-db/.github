@@ -37,6 +37,7 @@ jobs:
       manager: ${{ steps.cfg.outputs.manager }}
       layout: ${{ steps.cfg.outputs.layout }}
       publishes: ${{ steps.cfg.outputs.publishes }}
+      publicRelease: ${{ steps.cfg.outputs.publicRelease }}
     steps:
       # family-config reads the config THROUGH family-tools, so the tools must
       # be on disk first — setup-family checks out and fetches them; a bare
@@ -49,9 +50,23 @@ jobs:
       - id: cfg
         uses: noy-db/.github/actions/family-config@v1
 
+  # A repo whose family.config.json says publicRelease: false (the premium tier)
+  # must never reach public npm through this workflow, whatever a stray Release
+  # or a copied caller does — spec §4.2's refuse-a-public-publish gate, by
+  # construction rather than by an absent secret. Loud, so it reads as a
+  # deliberate refusal and not as a misconfiguration.
+  refused:
+    needs: config
+    if: needs.config.outputs.publicRelease == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '::error::family.config.json declares publicRelease: false — this repo does not publish to public npm. Nothing was published.'
+          exit 1
+
   verify:
     needs: config
-    if: needs.config.outputs.publishes == 'true'
+    if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: noy-db/.github/actions/setup-family@v1
@@ -102,6 +117,7 @@ jobs:
 
   publish:
     needs: [config, verify]
+    if: needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
     env:
       MANAGER: ${{ needs.config.outputs.manager }}
