@@ -62,6 +62,7 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
 
   const privatised = []
   const widened = []
+  const widenedDeps = []
   const skipped = []
 
   for (const { dir, json } of entries) {
@@ -110,6 +111,40 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
       if (!widened.includes(json.name)) widened.push(json.name)
     }
 
+    // (4b) Widen a CROSS-REPO @noy-db hard DEPENDENCY the same way. Step (4)
+    // covers peers, and `changeset version --snapshot` rewrites this repo's OWN
+    // packages to their exact snapshot version — so a dependency on a package
+    // published by ANOTHER repo is the one edge nothing rewrites, and it sails
+    // into the org registry still carrying a public range.
+    //
+    // ⛔ Measured live 2026-09-13: `@noy-db/on-shamir` depends on
+    // `@noy-db/shamir@^0.8.0-pre.0`, and shamir is core-published. A consumer's
+    // `.npmrc` scope redirect is all-or-nothing, so that range is resolved
+    // against the org registry — which carries only `0.0.0-dev-*` — and npm
+    // fails ETARGET, killing the WHOLE install, not just that package.
+    // ⭐ The same edge resolves fine from public npm, so no repo's CI, no
+    // tarball and no public install can witness it. Only an install through the
+    // redirect can, which is what `dev-set-check.mjs` in the family root does.
+    //
+    // ⚠️ Do not "simplify" this by widening every @noy-db dependency: an
+    // INTRA-repo one must stay untouched so changesets can pin it exactly. A
+    // widened intra-repo range would float forward onto a later snapshot and
+    // break the set — the same float that cost a pilot trial an ERESOLVE.
+    for (const [name, range] of Object.entries(json.dependencies ?? {})) {
+      if (!name.startsWith('@noy-db/')) continue
+      if (versionedPackages.includes(name)) continue // ours — changesets pins it exactly
+      if (range.includes(DEV_MARKER)) continue // already widened — a re-run
+      if (range.startsWith('workspace:')) continue // see step (4)'s note
+      const trimmed = range.trim()
+      if (trimmed.endsWith('||') || trimmed.startsWith('||')) {
+        skipped.push(`${json.name}: ${name} ${JSON.stringify(range)}`)
+        continue
+      }
+      json.dependencies[name] = `${range} || ${DEV_CLAUSE}`
+      touched = true
+      if (!widenedDeps.includes(json.name)) widenedDeps.push(json.name)
+    }
+
     // (5) An unscoped name has no place in the @noy-db org registry, and a
     // changesets run would otherwise try to publish it there and 404. Marking
     // it private is the narrowest way to take it out of the set.
@@ -122,5 +157,11 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
     if (touched) writeJson(file, json)
   }
 
-  return { versionedPackages, privatised: privatised.sort(), widened: widened.sort(), skipped: skipped.sort() }
+  return {
+    versionedPackages,
+    privatised: privatised.sort(),
+    widened: widened.sort(),
+    widenedDeps: widenedDeps.sort(),
+    skipped: skipped.sort(),
+  }
 }

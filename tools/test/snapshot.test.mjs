@@ -53,8 +53,96 @@ test('prepareSnapshot: all five effects, on a copy of fixtures/workspace', (t) =
     versionedPackages: ['@noy-db/a', '@noy-db/hub'],
     privatised: ['some-tool'],
     widened: ['@noy-db/a'],
+    widenedDeps: [],
     skipped: [],
   })
+})
+
+// ── (4b) cross-repo hard dependencies ────────────────────────────────────────
+//
+// Measured live 2026-09-13: `@noy-db/on-shamir`'s published @dev build carried
+// `dependencies: {"@noy-db/shamir": "^0.8.0-pre.0"}` untouched, because step (4)
+// only ever looked at peerDependencies. `@noy-db/shamir` lives in ANOTHER repo,
+// so changesets never rewrote it either. Under the all-or-nothing scope redirect
+// that range is resolved against the org registry, which carries only
+// `0.0.0-dev-*` — npm fails ETARGET and the whole @dev install dies.
+//
+// ⭐ It resolves perfectly from public npm, so no repo's CI, no tarball and no
+// public install could witness it. Ruled by `on` and core the same day: shamir
+// is correctly a hard dependency (zero-dep pure byte math, no instance identity,
+// and on-shamir re-exports 16 of its symbols), so the gap is HERE, not there.
+function addCrossRepoDep(root) {
+  mkdirSync(join(root, 'packages/on-shamir'))
+  writeFileSync(
+    join(root, 'packages/on-shamir/package.json'),
+    JSON.stringify(
+      {
+        name: '@noy-db/on-shamir',
+        version: '0.7.0',
+        // `@noy-db/shamir` is published by a DIFFERENT repo; `@noy-db/a` is one
+        // of this repo's own, and must be left for changesets to pin exactly.
+        dependencies: { '@noy-db/shamir': '^0.8.0-pre.0', '@noy-db/a': '^0.7.0', zod: '^3.0.0' },
+      },
+      null,
+      2,
+    ) + '\n',
+  )
+}
+
+test('prepareSnapshot: a CROSS-REPO @noy-db dependency is widened; an intra-repo one is left to changesets', (t) => {
+  const root = copyFixture(t, 'workspace')
+  addCrossRepoDep(root)
+  const cfg = loadConfig(root)
+
+  const summary = prepareSnapshot(root, cfg, OPTS)
+  const deps = read(root, 'packages/on-shamir').dependencies
+
+  // The cross-repo edge now admits a snapshot version, so it resolves on the
+  // org registry instead of failing ETARGET.
+  assert.equal(deps['@noy-db/shamir'], '^0.8.0-pre.0 || >=0.0.0-dev-0 <0.0.1')
+
+  // ⛔ The intra-repo edge must NOT be touched: `changeset version --snapshot`
+  // rewrites it to the exact snapshot version, and a widened range here would
+  // let it float forward off the set instead.
+  assert.equal(deps['@noy-db/a'], '^0.7.0')
+
+  // A third-party dependency is never this step's business.
+  assert.equal(deps.zod, '^3.0.0')
+
+  assert.deepEqual(summary.widenedDeps, ['@noy-db/on-shamir'])
+  assert.deepEqual(summary.skipped, [])
+})
+
+test('prepareSnapshot: widening a cross-repo dependency is idempotent', (t) => {
+  const root = copyFixture(t, 'workspace')
+  addCrossRepoDep(root)
+  const cfg = loadConfig(root)
+
+  prepareSnapshot(root, cfg, OPTS)
+  const second = prepareSnapshot(root, cfg, OPTS)
+
+  assert.equal(read(root, 'packages/on-shamir').dependencies['@noy-db/shamir'], '^0.8.0-pre.0 || >=0.0.0-dev-0 <0.0.1')
+  assert.deepEqual(second.widenedDeps, [], 'a re-run reports no change rather than double-appending')
+})
+
+test('prepareSnapshot: a dangling || in a cross-repo dependency is SKIPPED, never widened', (t) => {
+  const root = copyFixture(t, 'workspace')
+  mkdirSync(join(root, 'packages/on-bad'))
+  writeFileSync(
+    join(root, 'packages/on-bad/package.json'),
+    JSON.stringify({ name: '@noy-db/on-bad', version: '0.7.0', dependencies: { '@noy-db/shamir': '^0.8.0-pre.0 || ' } }, null, 2) + '\n',
+  )
+  const cfg = loadConfig(root)
+
+  const summary = prepareSnapshot(root, cfg, OPTS)
+
+  // Appending here would yield "^0.8.0-pre.0 ||  || >=0.0.0-dev-0 <0.0.1",
+  // which semver reads as "*" — a malformed range silently upgraded to
+  // unbounded. The workflow hard-stops on `skipped`, which is the right outcome.
+  assert.equal(read(root, 'packages/on-bad').dependencies['@noy-db/shamir'], '^0.8.0-pre.0 || ')
+  assert.deepEqual(summary.widenedDeps, [])
+  assert.equal(summary.skipped.length, 1)
+  assert.match(summary.skipped[0], /on-bad.*shamir/)
 })
 
 test('prepareSnapshot: a range already carrying the dev clause is left alone — idempotent', (t) => {
