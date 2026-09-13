@@ -15,6 +15,7 @@ import { runCheckLicense } from './src/gates/check-license.mjs'
 import { runPeerFloor } from './src/gates/peer-floor.mjs'
 import { prepareSnapshot } from './src/snapshot/prepare.mjs'
 import { snapshotReport } from './src/snapshot/report.mjs'
+import { census, report as censusReport } from './src/release/census.mjs'
 
 // A gate's failures are either {rule,msg,where} rows (architecture, which has
 // several rules) or plain strings (the ported single-purpose checks, whose
@@ -31,7 +32,7 @@ const GATES = {
   'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
 }
 
-const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report']
+const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census']
 
 function parseArgs(argv) {
   const opts = {
@@ -80,7 +81,7 @@ function report(label, failures) {
   return 0
 }
 
-function main(argv) {
+async function main(argv) {
   const opts = parseArgs(argv)
   if (opts.gate === undefined) {
     console.error(usage())
@@ -116,6 +117,23 @@ function main(argv) {
     return 0
   }
 
+  // ⛔ Runs AFTER `changeset publish`, and asks the registry rather than the
+  // publisher. core's v0.8.0 run went green having published 34 of 36 — hub
+  // among the two it claimed and did not deliver. See src/release/census.mjs.
+  if (opts.gate === 'publish-census') {
+    const names = snapshotReport(root, cfg, { names: true })
+      .join('\n')
+      .split(/\s+/)
+      .filter(Boolean)
+    const [version] = snapshotReport(root, cfg, { version: true })
+    if (names.length === 0) {
+      console.log('[census] nothing published — no names to check')
+      return 0
+    }
+    const result = await census(names, String(version).trim())
+    return censusReport(result)
+  }
+
   const entry = GATES[opts.gate]
   if (!entry) {
     console.error(`unknown gate "${opts.gate}"\n${usage()}`)
@@ -134,8 +152,11 @@ function main(argv) {
   return report(entry.label, failures)
 }
 
+// `main` is async because publish-census polls the registry. Awaiting it here
+// keeps the single exit point: a rejected promise must not become an unhandled
+// rejection that exits 0 while reporting nothing.
 try {
-  process.exit(main(process.argv.slice(2)))
+  process.exit(await main(process.argv.slice(2)))
 } catch (err) {
   console.error(`✗ ${err.message}`)
   process.exit(2)
