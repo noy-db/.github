@@ -19,6 +19,21 @@ on:
         type: string
         required: false
         default: '22'
+      node-matrix:
+        # ⭐ Trimmed to a single major on every push 2026-09-13, when publishing
+        # froze and `@dev` became the family's only release surface. With one
+        # developer and one consumer on one runtime, a second major on every
+        # push bought a signal nobody was reading at twice the wall-clock.
+        # ⛔ It is a TRIM, not a deletion: `templates/nightly-caller.yml` passes
+        # the full matrix on a schedule, and a repo without that caller has
+        # genuinely stopped testing node 24. Adopt the caller or say so out loud.
+        # ⚠️ Do NOT narrow this to match whatever the current consumer runs. The
+        # published packages carry no engines floor promise that one runtime can
+        # discharge, and the nightly is what keeps that honest.
+        description: JSON array of Node majors for the test matrix.
+        type: string
+        required: false
+        default: '["22"]'
 
 # Each job re-runs setup-family and the build. There is no artifact passing
 # between them on purpose: a rebuild costs a cached install, and an artifact
@@ -62,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '24']
+        node: ${{ fromJSON(inputs.node-matrix) }}
     steps:
       - uses: noy-db/.github/actions/setup-family@v1
         with:
