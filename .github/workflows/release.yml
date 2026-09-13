@@ -171,3 +171,22 @@ jobs:
             node .family-tools/tools/cli.mjs snapshot-report --root .
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # ⛔ THE CENSUS. Asks the REGISTRY whether it gained every version the
+      # publisher claimed — the one question nothing else in this rail asks.
+      #
+      # core's v0.8.0 run, 2026-09-13: green, 34 of 36 published. changesets
+      # printed `🦋 @noy-db/hub@0.8.0` in its success list and npm never gained
+      # the version. No error, exit 0. `hub` is the trust boundary every
+      # satellite binds.
+      #
+      # ⚠️ `if: always()` on purpose: a partial publish is EXACTLY the case where
+      # the publish step may have failed, and that is when the count matters
+      # most. Skipping the census on failure would hide the shape of the damage.
+      #
+      # ⭐ Placed AFTER Record so the summary survives even when this fails the
+      # job — an operator needs the list of what did publish in order to decide
+      # whether to re-fire the Release.
+      - name: Census — every published version must resolve on the registry
+        if: always()
+        run: node .family-tools/tools/cli.mjs publish-census --root .
