@@ -115,10 +115,50 @@ jobs:
             exit 1
           fi
 
+  # ⛔ A CHECK THAT IS NOT IN THE RELEASE PATH CANNOT GATE A RELEASE. This lived
+  # only as a Monday-06:00 cron in each caller, so when 0.8.0 shipped, THREE
+  # repos published to @latest with their peer-floor claim unverified against the
+  # code being released — `to` had been red for a week and `at`/`on` had last run
+  # against a pre-0.8 base. It did not fail; it was not asked.
+  #
+  # ⭐ Here and not in `family.config.json`'s gates array, deliberately: the gates
+  # array runs on every PR, and this installs published versions from the network
+  # and rewrites the tree to do it. The property only has to hold at the instant a
+  # version is published. Same argument that put the census in this file.
+  #
+  # ⚠️ Its own job, not a step in `verify`: the floor install MUTATES the tree, so
+  # it needs `frozen: false` — which is exactly what verify must not have.
+  peer-floor:
+    needs: config
+    if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: noy-db/.github/actions/setup-family@v1
+        with:
+          manager: ${{ needs.config.outputs.manager }}
+          node-version: ${{ inputs.node-version }}
+          frozen: 'false'
+      - name: Build
+        run: ${{ needs.config.outputs.manager }} run --if-present build
+      - name: Every package compiles against the oldest version its peers admit
+        run: node .family-tools/tools/cli.mjs peer-floor --root .
+
   publish:
-    needs: [config, verify]
+    needs: [config, verify, peer-floor]
     if: needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
+    # ⭐ THE GATE. `release` carries a required reviewer, so the publish job
+    # PAUSES here until a human approves it in the GitHub UI — the family's
+    # "never publish without explicit user confirmation" rule as an enforced
+    # gate rather than a line of prose.
+    #
+    # ⛔ The rule lives in repository SETTINGS, which a silo cannot reach — unlike
+    # `family.config.json`, which a silo can edit in its own PR. That is the whole
+    # reason the boundary sits here. Set with `_family/scripts/rail.mjs gate`.
+    #
+    # ⚠️ NPM_TOKEN is an ORG secret scoped to the six public publishers, no longer
+    # six repo copies. It is still reached through `secrets: inherit` in the caller.
+    environment: release
     env:
       MANAGER: ${{ needs.config.outputs.manager }}
       LAYOUT: ${{ needs.config.outputs.layout }}
