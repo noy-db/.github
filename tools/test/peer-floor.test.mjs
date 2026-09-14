@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
-import { computeFloors, floorKey, pinnedRootText, planGroups } from '../src/gates/peer-floor.mjs'
+import { computeFloors, resolveWorkspaceRange, floorKey, pinnedRootText, planGroups } from '../src/gates/peer-floor.mjs'
 import { copyFixture, FIXTURES, TOOLS } from './helpers.mjs'
 
 test('computeFloors: a caret floors at the version written, prerelease included', () => {
@@ -112,4 +112,50 @@ test('cli: peer-floor --dry-run prints the plan, installs nothing, exits 0', () 
   )
   assert.match(out, /@noy-db\/hub@0\.7\.0/)
   assert.match(out, /--dry-run: nothing installed/)
+})
+
+// --- workspace: protocol resolution (added 2026-09-14) ---------------------
+// The gate read the SOURCE manifest and choked on strings pnpm rewrites at pack
+// time, so noy-db/to went red while its published manifests were correct.
+
+test('resolveWorkspaceRange mirrors pnpm: * is exact, ^ and ~ wrap the version', () => {
+  const local = { '@noy-db/to-aws-s3': '0.8.0' }
+  assert.equal(resolveWorkspaceRange('workspace:*', '@noy-db/to-aws-s3', local), '0.8.0')
+  assert.equal(resolveWorkspaceRange('workspace:^', '@noy-db/to-aws-s3', local), '^0.8.0')
+  assert.equal(resolveWorkspaceRange('workspace:~', '@noy-db/to-aws-s3', local), '~0.8.0')
+})
+
+test('resolveWorkspaceRange passes an explicit range through', () => {
+  assert.equal(resolveWorkspaceRange('workspace:^1.2.0', '@noy-db/x', {}), '^1.2.0')
+})
+
+test('resolveWorkspaceRange leaves a plain range untouched', () => {
+  assert.equal(resolveWorkspaceRange('^0.7.0 || ^0.8.0-pre.0', '@noy-db/hub', {}), '^0.7.0 || ^0.8.0-pre.0')
+})
+
+test('resolveWorkspaceRange returns null for a sibling not in the tree', () => {
+  // Unresolvable for real — must fail, never be treated as satisfied.
+  assert.equal(resolveWorkspaceRange('workspace:^', '@noy-db/absent', {}), null)
+})
+
+test('computeFloors resolves a workspace peer to the sibling version', () => {
+  const pkg = { peerDependencies: { '@noy-db/to-aws-s3': 'workspace:^' } }
+  assert.deepEqual(computeFloors(pkg, { '@noy-db/to-aws-s3': '0.8.0' }), {
+    '@noy-db/to-aws-s3': '0.8.0',
+  })
+})
+
+test('computeFloors still throws when the sibling is absent', () => {
+  assert.throws(
+    () => computeFloors({ peerDependencies: { '@noy-db/gone': 'workspace:^' } }, {}),
+    /not in this tree/,
+  )
+})
+
+test('computeFloors reports the DECLARED string, not the resolved one', () => {
+  // The reader has to be able to grep their manifest for what the gate saw.
+  assert.throws(
+    () => computeFloors({ peerDependencies: { '@noy-db/hub': 'not-a-range' } }, {}),
+    /"not-a-range"/,
+  )
 })

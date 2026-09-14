@@ -63,17 +63,56 @@ import { packageDirs, readPkg } from '../walk.mjs'
  * Flooring at the release would test a HIGHER version than the range admits, so
  * a range that is false for pre-releases would pass. The two look alike.
  */
-export function computeFloors(pkg) {
+/**
+ * Turn pnpm's `workspace:` protocol into the range it will PUBLISH as.
+ *
+ * ⛔ WITHOUT THIS THE GATE READS THE WRONG ARTEFACT. `workspace:^` never reaches
+ * a registry — pnpm rewrites it at pack time to the sibling's real version — so
+ * a floor computed from the source manifest is asking about a string no consumer
+ * will ever see. Measured 2026-09-14: noy-db/to went red on to-cloudflare-r2 and
+ * to-supabase while their PUBLISHED manifests carried a correct `^0.8.0`. The
+ * gate was right that the string was unresolvable and wrong that it mattered.
+ *
+ * ⚠️ The failure it produced NAMED THE WRONG PACKAGES — it reported to-aws-s3
+ * and to-postgres, which are the packages depended UPON. The offenders were
+ * their dependents. Keep the thrower's message pointing at the manifest that
+ * holds the string.
+ *
+ * pnpm's rewrite rules, which this mirrors exactly:
+ *   workspace:*      → the sibling's exact version   (1.2.3)
+ *   workspace:^      → caret on it                   (^1.2.3)
+ *   workspace:~      → tilde on it                   (~1.2.3)
+ *   workspace:^1.2.0 → the explicit range            (^1.2.0)
+ *
+ * Returns null when the sibling is not in this tree — a genuinely unresolvable
+ * range that SHOULD fail, rather than being quietly treated as satisfied.
+ */
+export function resolveWorkspaceRange(range, name, localVersions = {}) {
+  if (typeof range !== 'string' || !range.startsWith('workspace:')) return range
+  const spec = range.slice('workspace:'.length)
+  if (spec !== '*' && spec !== '^' && spec !== '~') return spec
+  const v = localVersions[name]
+  if (!v) return null
+  return spec === '*' ? v : `${spec}${v}`
+}
+
+export function computeFloors(pkg, localVersions = {}) {
   const floors = {}
-  for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
+  for (const [name, declared] of Object.entries(pkg.peerDependencies ?? {})) {
     if (!name.startsWith('@noy-db/')) continue
+    const range = resolveWorkspaceRange(declared, name, localVersions)
+    if (range === null)
+      throw new Error(
+        `${name}: peer range "${declared}" refers to a workspace sibling that is not in this tree, ` +
+          `so there is no version to resolve it to.`,
+      )
     let min
     try {
       min = semver.minVersion(range)
     } catch {
       min = null
     }
-    if (!min) throw new Error(`${name}: cannot compute a minimum version from "${range}"`)
+    if (!min) throw new Error(`${name}: cannot compute a minimum version from "${declared}"`)
     if (min.version === '0.0.0')
       throw new Error(
         `${name}: range "${range}" has no lower bound, so there is no floor to check it against. ` +
@@ -127,14 +166,28 @@ export function planGroups(root, cfg) {
   const errors = []
   const skipped = []
 
-  for (const dir of packageDirs(root, cfg.layout)) {
+  // First pass: every package's own version, so a `workspace:` peer on a sibling
+  // can be resolved to the range it will publish as. Built from ALL package dirs
+  // including private ones — a private sibling is still a resolvable target.
+  const dirs = packageDirs(root, cfg.layout)
+  const localVersions = {}
+  for (const dir of dirs) {
+    const pj = readPkg(dir)
+    if (pj.name && pj.version) localVersions[pj.name] = pj.version
+  }
+
+  for (const dir of dirs) {
     const pj = readPkg(dir)
     if (pj.private && cfg.layout !== 'single') continue
     let floors
     try {
-      floors = computeFloors(pj)
+      floors = computeFloors(pj, localVersions)
     } catch (err) {
-      errors.push(`${err.message}`)
+      // ⚠️ NAME THE OFFENDER. computeFloors throws about the PEER it could not
+      // resolve, so an unprefixed message reads as "@noy-db/to-aws-s3 is broken"
+      // when the bad string is in to-cloudflare-r2's manifest. Someone then goes
+      // and reads a package that has nothing wrong with it.
+      errors.push(`${pj.name ?? dir}: ${err.message}`)
       continue
     }
     // A package with no @noy-db peer at all has no floor to check.

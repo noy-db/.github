@@ -50,7 +50,11 @@ test('every job that reads family-tools starts with setup-family, never a bare c
   // failed the first real release at the config job.
   assert.doesNotMatch(y, /uses: actions\/checkout@/)
   const jobs = y.split(/^  [a-z-]+:\n/m).slice(1)
-  assert.equal(jobs.length, 4)
+  // A LOWER BOUND, not a count. This asserted `=== 4` and broke the moment a
+  // fifth job (peer-floor) was added — failing on the arithmetic rather than on
+  // anything being wrong. The count is a fact about today; the per-job check
+  // below is the invariant.
+  assert.ok(jobs.length >= 4, `expected the split to find the jobs, got ${jobs.length}`)
   // Only jobs that READ family-tools need it on disk; a job that merely
   // refuses (publicRelease: false) has no tools to read.
   const readers = jobs.filter((job) => /cli\.mjs|family-config/.test(job))
@@ -90,4 +94,22 @@ test('release.yml refuses a repo that declares publicRelease: false, on both ver
   const publish = y.slice(y.indexOf('\n  publish:'))
   assert.match(verify, /publicRelease != 'false'/)
   assert.match(publish, /if: needs\.config\.outputs\.publicRelease != 'false'/)
+})
+
+test('the publish job sits behind the release environment and the peer-floor gate', () => {
+  // Both added 2026-09-14. The environment is where "never publish without the
+  // user's word" stops being prose: the required reviewer lives in repository
+  // settings, which a silo cannot edit, unlike family.config.json.
+  const y = release()
+  const publish = y.slice(y.indexOf('\n  publish:'))
+  assert.match(publish, /^    environment: release$/m)
+  assert.match(publish, /needs: \[config, verify, peer-floor\]/)
+})
+
+test('peer-floor installs unfrozen — the floor install rewrites the tree', () => {
+  // It cannot be a step inside verify for exactly this reason.
+  const y = release()
+  const job = y.slice(y.indexOf('\n  peer-floor:'), y.indexOf('\n  publish:'))
+  assert.match(job, /frozen: 'false'/)
+  assert.match(job, /cli\.mjs peer-floor --root \./)
 })
