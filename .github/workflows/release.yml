@@ -104,13 +104,17 @@ jobs:
             exit 1
           fi
 
+      # ⛔ ANCHORED. Without `( |$)` the pattern for 0.8.0 also matches the heading
+      # `## 0.8.0-pre.0`, which is how at shipped 0.8.0 on 2026-09-13 with NO 0.8.0
+      # section and a green gate — the pre-release heading satisfied the stable
+      # check. Found by at while writing the section a day later.
       - name: CHANGELOG has a section for this version
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           v="${TAG#v}"
-          if ! grep -rqE "^## +\[?${v//./\\.}\]?" --include=CHANGELOG.md .; then
+          if ! grep -rqE "^## +\[?${v//./\\.}\]?( |$)" --include=CHANGELOG.md .; then
             echo "::error::no CHANGELOG.md section titled ${v}"
             exit 1
           fi
@@ -121,8 +125,8 @@ jobs:
           # 2026-09-15: as 4 source commits / 0 bullets, at 2 / 0.
           empty=0
           for f in $(git ls-files '*CHANGELOG.md'); do
-            body=$(awk -v h="^## +\\[?${v//./\\.}\\]?" '$0 ~ h {f=1; next} /^## /{f=0} f' "$f" | grep -cE '^\s*[-*]' || true)
-            if grep -qE "^## +\[?${v//./\\.}\]?" "$f" && [ "$body" = "0" ]; then
+            body=$(awk -v h="^## +\\[?${v//./\\.}\\]?( |$)" '$0 ~ h {f=1; next} /^## /{f=0} f' "$f" | grep -cE '^\s*[-*]' || true)
+            if grep -qE "^## +\[?${v//./\\.}\]?( |$)" "$f" && [ "$body" = "0" ]; then
               echo "::error::${f}: the ${v} section has no bullet — a heading with no notes"
               empty=1
             fi

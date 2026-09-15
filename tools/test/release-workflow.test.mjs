@@ -121,3 +121,16 @@ test('verify refuses a CHANGELOG version section with no bullets — a heading i
   assert.match(verify, /has no bullet/)
   assert.match(verify, /\[ "\$empty" = "0" \]/)
 })
+
+test('the CHANGELOG version predicate is END-ANCHORED — "## 0.8.0-pre.0" must not satisfy the 0.8.0 check', () => {
+  // at shipped 0.8.0 on 2026-09-13 with no 0.8.0 section and a green gate; the
+  // pre-release heading matched the unanchored pattern. Measured 2026-09-15:
+  // exact 0.8.0 sections in 2 of 58 CHANGELOGs family-wide; all 58 matched loosely.
+  const y = release()
+  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
+  const patterns = verify.match(/\^## \+\\\[\?\$\{v\/\/\.\/\\\\\.\}\\\]\?[^"']*/g) ?? []
+  assert.ok(patterns.length >= 2, `expected the version pattern at least twice, got ${patterns.length}`)
+  for (const p of patterns) assert.match(p, /\( \|\$\)$/, `unanchored: ${p}`)
+  // and the awk header in the bullet loop is anchored too
+  assert.match(verify, /\\\\\]\?\( \|\$\)"/)
+})
