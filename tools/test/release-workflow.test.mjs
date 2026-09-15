@@ -113,3 +113,11 @@ test('peer-floor installs unfrozen — the floor install rewrites the tree', () 
   assert.match(job, /frozen: 'false'/)
   assert.match(job, /cli\.mjs peer-floor --root \./)
 })
+
+test('verify refuses a CHANGELOG version section with no bullets — a heading is not the notes', () => {
+  // as#5, 2026-09-15: a public option merged under an empty "## Unreleased".
+  const y = release()
+  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
+  assert.match(verify, /has no bullet/)
+  assert.match(verify, /\[ "\$empty" = "0" \]/)
+})

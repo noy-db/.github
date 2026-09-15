@@ -114,6 +114,20 @@ jobs:
             echo "::error::no CHANGELOG.md section titled ${v}"
             exit 1
           fi
+          # ⛔ AND IT MUST NOT BE EMPTY. as#5 merged a public option on two packages with
+          # an empty "## Unreleased"; the section would have existed at cut time with
+          # nothing in it, and the notes a consumer reads would not have mentioned the
+          # option. A heading is a promise; the bullets are the notes. Measured
+          # 2026-09-15: as 4 source commits / 0 bullets, at 2 / 0.
+          empty=0
+          for f in $(git ls-files '*CHANGELOG.md'); do
+            body=$(awk -v h="^## +\\[?${v//./\\.}\\]?" '$0 ~ h {f=1; next} /^## /{f=0} f' "$f" | grep -cE '^\s*[-*]' || true)
+            if grep -qE "^## +\[?${v//./\\.}\]?" "$f" && [ "$body" = "0" ]; then
+              echo "::error::${f}: the ${v} section has no bullet — a heading with no notes"
+              empty=1
+            fi
+          done
+          [ "$empty" = "0" ]
 
   # ⛔ A CHECK THAT IS NOT IN THE RELEASE PATH CANNOT GATE A RELEASE. This lived
   # only as a Monday-06:00 cron in each caller, so when 0.8.0 shipped, THREE
