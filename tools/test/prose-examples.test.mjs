@@ -108,20 +108,16 @@ test('no built entry point is cannot-run — every import would be an ignored TS
 
 // ─── the preamble convention ────────────────────────────────────────────────
 
-test('an import-less block with no preamble is a finding', (t) => {
+test('an import-less block naming a PUBLISHED symbol is a missing import, not a preamble ask', (t) => {
+  // ⭐ The preamble rule fires on a DIAGNOSTIC, not on the marker's absence.
+  // `shipped` is published, so the remedy is an import — and a preamble that
+  // declared it would document an ambient that is not ambient. Only one
+  // finding, and it is the right one.
   const root = copyHere(t, 'workspace-prose')
   setReadme(root, ['# @fixture/lib', '', '```ts', "const out: string = shipped('x')", '```', ''].join('\n'))
   const res = gate(root)
-  // ⭐ TWO findings, and the pair is the point rather than noise. The block is
-  // missing a preamble AND it names `shipped`, which the package publishes.
-  // The two rules disagree about the remedy on purpose: the preamble rule says
-  // "declare the elided binding", the missing-import rule says "a name we
-  // publish is an IMPORT, and declaring it would document an ambient that is
-  // not ambient". For a published name the import wins, so a reader who sees
-  // both is being told the preamble is the wrong fix here.
-  assert.equal(res.failures.length, 2, JSON.stringify(res.failures))
-  assert.ok(res.failures.some((f) => /no <!-- prose-preamble -->/.test(f)))
-  assert.ok(res.failures.some((f) => /TS2304.*shipped/.test(f)))
+  assert.equal(res.failures.length, 1, JSON.stringify(res.failures))
+  assert.match(res.failures[0], /TS2304.*shipped/)
 })
 
 test('an import-less block using a NON-published binding reports only the preamble', (t) => {
@@ -172,10 +168,12 @@ test('a preamble that only IMPORTS, leaving the binding untyped, does not launde
 
 // ─── pass 1: unparseable blocks ─────────────────────────────────────────────
 
-test('a block that is not TypeScript is named, not silently swallowed', (t) => {
-  // ⛔ The reason pass 1 exists: tsc abandons SEMANTIC checking for the whole
-  // program on any syntactic diagnostic, so one mislabelled fence would
-  // silence every other block and the gate would report success.
+test('⭐ a block that is not TypeScript is EXCLUDED and NAMED, never failed', (t) => {
+  // ⛔ Illustrative-only is a CONSEQUENCE of not being a program, not an
+  // opt-out. Excluding is required, not merely kind: tsc abandons SEMANTIC
+  // checking for the whole program on any syntactic diagnostic, so one
+  // mislabelled fence would silence every other block. Naming it is what stops
+  // the exclusion growing silently into a gate that checks nothing.
   const root = copyHere(t, 'workspace-prose')
   setReadme(root, [
     '# @fixture/lib', '',
@@ -189,9 +187,59 @@ test('a block that is not TypeScript is named, not silently swallowed', (t) => {
     '```', '',
   ].join('\n'))
   const res = gate(root)
-  const named = res.failures.filter((f) => /not parseable as TypeScript/.test(f))
-  assert.equal(named.length, 1, JSON.stringify(res.failures))
-  assert.match(named[0], /README\.md:4/)
+  assert.deepEqual(res.failures, [], 'an unparseable block is not a failure')
+  assert.ok(res.notes.some((n) => /README\.md:4/.test(n)), `named in notes: ${JSON.stringify(res.notes)}`)
+  assert.ok(res.notes.some((n) => /excluded as not-a-program/.test(n)))
+})
+
+test('the block AFTER an unparseable one is still checked — the exclusion is why', (t) => {
+  const root = copyHere(t, 'workspace-prose')
+  setReadme(root, [
+    '# @fixture/lib', '',
+    '```ts',
+    'with<Name>(  :: not typescript at all',
+    '```', '',
+    '```ts',
+    "import { shipped } from '@fixture/lib'",
+    "const n: number = shipped('hello')",   // a REAL error, must survive
+    '```', '',
+  ].join('\n'))
+  const res = gate(root)
+  assert.equal(res.failures.length, 1, JSON.stringify(res.failures))
+  assert.match(res.failures[0], /TS2322/)
+})
+
+test('⭐ a declaration-only block is excluded and named, not failed as a broken program', (t) => {
+  // `at` ships five "## API" signature listings. They PARSE, so pass 1's
+  // syntactic filter never sees them; what they produce is TS2391 per
+  // signature. A surface listing is documentation, not a program that runs.
+  const root = copyHere(t, 'workspace-prose')
+  setReadme(root, [
+    '# @fixture/lib', '', '## API', '',
+    '```ts',
+    'export function encryptThing(input: string): Promise<string>',
+    'export function decryptThing(input: string): Promise<string>',
+    '```', '',
+  ].join('\n'))
+  const res = gate(root)
+  assert.deepEqual(res.failures, [], JSON.stringify(res.failures))
+  assert.ok(res.notes.some((n) => /README\.md:6/.test(n)), JSON.stringify(res.notes))
+})
+
+test('a signature listing with a REAL error alongside it is still failed', (t) => {
+  // The decl-only exclusion must not be earnable by adding one signature to a
+  // block that is otherwise a broken program.
+  const root = copyHere(t, 'workspace-prose')
+  setReadme(root, [
+    '# @fixture/lib', '',
+    '```ts',
+    "import { shipped } from '@fixture/lib'",
+    'export function encryptThing(input: string): Promise<string>',
+    "const n: number = shipped('x')",
+    '```', '',
+  ].join('\n'))
+  const res = gate(root)
+  assert.ok(res.failures.some((f) => /TS2322/.test(f)), JSON.stringify(res.failures))
 })
 
 // ─── collectPublishedNames ──────────────────────────────────────────────────

@@ -70,9 +70,19 @@ function parseArgs(argv) {
   return opts
 }
 
+// ⚠️ THE PIPE TRAP, in the help because it is where someone looks after being
+// confused by it. `family-tools <gate> … | head` reports `$?` from HEAD, not
+// from the gate: `as` nearly filed a FAILING prose run as passing on its first
+// look, and `to` recorded the same shape on 2026-09-11. The summary line below
+// (`✓ … OK` / `✗ … FAILED (n)`) exists so the eye never needs `$?` — but a
+// pipe can also truncate that line away, which is exactly how it bites.
 const usage = () =>
   `usage: family-tools <${COMMANDS.join('|')}> [--root path] [--config path] [--print]\n` +
-  `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]`
+  `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]\n` +
+  `\n` +
+  `⚠️  Do NOT pipe this command when you care about its exit code — \`… | head\`\n` +
+  `    gives you head's status, not the gate's. Redirect to a file and read the\n` +
+  `    final summary line, or check \${PIPESTATUS[0]}.`
 
 function report(label, failures) {
   for (const f of failures) console.error(`✗ ${line(f)}`)
@@ -174,6 +184,10 @@ async function main(argv) {
     console.error(`✗ ${entry.label}: ${res.cannotRun}`)
     return 2
   }
+  // Notes are NAMED, not counted, and printed whether or not the gate passes:
+  // prose-examples uses them for blocks excluded as not-a-program, so the
+  // exclusion cannot grow silently into a gate that checks nothing.
+  for (const note of res.notes ?? []) console.log(`  ${note}`)
   return report(entry.label, failures)
 }
 

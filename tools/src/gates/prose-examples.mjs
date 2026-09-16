@@ -119,8 +119,54 @@ const parse = (raw, probeToBlock) =>
     return b ? [{ b, row: Number(m[2]), code: m[3], msg: m[4] }] : []
   })
 
+
 /**
- * @returns {{ failures: string[], status?: string, cannotRun?: string }}
+ * Blocks that are NOT PROGRAMS, and so are excluded from checking and NAMED in
+ * the output rather than failed. Illustrative-only is a CONSEQUENCE of this
+ * test, never an opt-out a writer can claim by adding a marker.
+ *
+ * Two kinds:
+ *
+ * ⛔ SYNTACTIC (TS1xxx) — a template like `with<Name>(…)`. These MUST be
+ *    excluded rather than merely ignored: tsc abandons semantic checking for
+ *    the whole program on any syntactic diagnostic, so one of these silences
+ *    every other block in the same program. Measured on core: 5 templates
+ *    suppressed checking of all 79 blocks while the gate reported success.
+ *
+ * ⛔ DECLARATION-ONLY — an "## API" block of bare signatures. It PARSES, so
+ *    pass 1's syntactic filter never sees it; what it produces is TS2391
+ *    ("function implementation is missing") per signature. `at` carries five
+ *    such blocks, excluded by its own census and by the convention, and the
+ *    first version of this gate failed all five. A signature listing is
+ *    documentation of a surface, not a program that can run.
+ *
+ *    The test is deliberately narrow: at least one TS2391/TS2392, and NOTHING
+ *    outside the set of diagnostics a signature listing legitimately produces.
+ *    A block with a real type error alongside its signatures is still a
+ *    failing block — the exclusion cannot be earned by adding one signature.
+ */
+const SYNTACTIC = /^TS1\d{3}$/
+const DECL_ONLY_MARKER = new Set(['TS2391', 'TS2392'])
+// What a bare signature listing legitimately produces besides the marker:
+// unresolved type names it references, and modules it does not import.
+const DECL_ONLY_TOLERATED = new Set(['TS2391', 'TS2392', 'TS2304', 'TS2552', 'TS2307'])
+
+export function blocksToExclude(pass1) {
+  const byProbe = new Map()
+  for (const d of pass1) {
+    if (!byProbe.has(d.b.probe)) byProbe.set(d.b.probe, [])
+    byProbe.get(d.b.probe).push(d)
+  }
+  const skip = new Set()
+  for (const [probe, ds] of byProbe) {
+    if (ds.some((d) => SYNTACTIC.test(d.code))) { skip.add(probe); continue }
+    if (ds.some((d) => DECL_ONLY_MARKER.has(d.code)) && ds.every((d) => DECL_ONLY_TOLERATED.has(d.code))) skip.add(probe)
+  }
+  return skip
+}
+
+/**
+ * @returns {{ failures: string[], notes: string[], status?: string, cannotRun?: string }}
  */
 export function runProseExamples(root, cfg) {
   const dirs = packageDirs(root, cfg.layout)
@@ -145,12 +191,13 @@ export function runProseExamples(root, cfg) {
   const blocks = []
   const missingPreamble = []
   const failures = []
+  const notes = []
   for (const [ownerDir, files] of owned) {
     for (const { file, isSource } of files) {
       let prepared
       try { prepared = prepareBlocks(readFileSync(file, 'utf8'), { isSource, requirePreamble: true }) }
       catch (e) { failures.push(`${relative(root, file)}: ${e.message}`); continue }
-      if (prepared.missingPreamble) missingPreamble.push(relative(root, file))
+      if (prepared.missingPreamble) missingPreamble.push({ rel: relative(root, file), file })
       for (const b of prepared.blocks) blocks.push({ ...b, file, ownerDir })
     }
   }
@@ -165,6 +212,7 @@ export function runProseExamples(root, cfg) {
   if (blocks.length === 0) {
     return {
       failures: [],
+      notes: [],
       status: 'cannot-run',
       cannotRun: `found ZERO fenced blocks across ${[...owned.values()].flat().length} prose file(s) — the gate examined nothing. That is a broken scope, not clean prose.`,
     }
@@ -179,7 +227,7 @@ export function runProseExamples(root, cfg) {
     // ⛔ NOT a silent skip. `npx tsc` would DOWNLOAD a compiler and check the
     // prose against a version the repo never uses — green, and against the
     // wrong thing.
-    return { failures: [], status: 'cannot-run', cannotRun: 'cannot resolve the repo\'s own `typescript` — install dependencies first' }
+    return { failures: [], notes: [], status: 'cannot-run', cannotRun: 'cannot resolve the repo\'s own `typescript` — install dependencies first' }
   }
 
   // ⛔ BUILD-ORDER VACUITY GUARD (`as`'s, ported on `on`'s recommendation).
@@ -190,51 +238,72 @@ export function runProseExamples(root, cfg) {
   if (published.size === 0) {
     return {
       failures: [],
+      notes: [],
       status: 'cannot-run',
       cannotRun: 'resolved ZERO exported names from any package entry point — every import would be an ignored TS2307 and the run would be vacuous. Build first.',
     }
   }
 
   // ── Compile, per owning directory, one program per block ────────────────
+  //
+  // ⛔ EVERY DIRECTORY IS ITS OWN TWO-PASS RUN, and its output is parsed ALONE.
+  // The first version accumulated one `raw` across directories and recomputed
+  // the excluded set from the whole of it each time, so a block excluded in the
+  // first package was RE-REPORTED once per later package: 86 findings on core's
+  // tree where its own gate names 3, and one `at` block reported five times.
+  // Found by the root running this against the four real trees — the fixture
+  // could not show it, because a fixture has one package.
   const probeToBlock = new Map()
-  let raw = ''
+  const diagnostics = []
+  const excluded = []
   try {
-    for (const [ownerDir, _files] of owned) {
+    for (const [ownerDir] of owned) {
       const mine = blocks.filter((b) => b.ownerDir === ownerDir)
       if (mine.length === 0) continue
       const out = join(ownerDir, PROBE_DIR)
       rmSync(out, { recursive: true, force: true })
       mkdirSync(out, { recursive: true })
-      // The examples are ESM (top-level await throughout). Without this the
-      // probe inherits a CommonJS default and every such block reports TS1309 —
-      // a MODULE-FORMAT diagnostic sharing the TS1xxx range with real parse
+      // ⛔ THE PROBE WRITES NO package.json, AND THE FILES ARE `.mts`.
+      // The examples are ESM (top-level await throughout), and a probe that
+      // inherits a CommonJS default reports TS1309 on every one — a
+      // MODULE-FORMAT diagnostic sharing the TS1xxx range with real parse
       // errors, which silently exempted 74 of 79 blocks on core's first build.
-      writeFileSync(join(out, 'package.json'), JSON.stringify({ type: 'module' }))
+      // The obvious fix, a `{ "type": "module" }` in the probe directory,
+      // SHADOWS the owning package's own manifest: Node and tsc walk up from
+      // the probe file, find a manifest with no `name` and no `exports`, and
+      // SELF-REFERENCE stops working — so a README importing its own package
+      // (`import type { Noydb } from '@noy-db/hub'` inside packages/hub) gets
+      // an untyped `db`, and the block compiles vacuously rather than failing.
+      // Measured on core: hub's `queryAcross` example became TS2347 "untyped
+      // function calls may not accept type arguments", and in-nuxt lost the
+      // `NuxtConfig` augmentation that makes its `noydb:` key checkable.
+      // `.mts` is unambiguously ESM whatever the nearest manifest says, so it
+      // buys the module format without shadowing anything.
+      // Snippets for browser bundlers legitimately assume `import.meta.env`.
+      // Model the app environment they target rather than weakening API
+      // checking — without this, every such block is a TS2339 on ImportMeta,
+      // which is a property of the probe and not a claim about our surface.
+      writeFileSync(join(out, 'ambient.d.ts'), 'interface ImportMeta { readonly env: Record<string, string> }\n')
       let nodeTyped = false
-      try { nodeTyped = declaresNodeTypes(readPkg(ownerDir)) } catch { /* root has no manifest of its own */ }
+      try { nodeTyped = declaresNodeTypes(readPkg(ownerDir)) } catch { /* the root has no manifest of its own */ }
 
+      const local = new Map()
       mine.forEach((b, i) => {
         // ⛔ ONE FILE PER BLOCK. Concatenating a README's blocks makes two that
         // import the same name collide as TS2300 — a defect the harness
         // invented. (`at`.)
-        const probe = join(out, `b${i}.ts`)
+        const probe = join(out, `b${i}.mts`)
         writeFileSync(probe, b.code)
-        probeToBlock.set(relative(ownerDir, probe), b)
-        probeToBlock.set(probe, b)
         b.probe = relative(ownerDir, probe)
+        local.set(b.probe, b)
+        probeToBlock.set(b.probe, b)
       })
+      const files = mine.map((b) => b.probe)
 
-      raw += compile(tsc, ownerDir, out, mine.map((b) => b.probe), nodeTyped, new Set())
-      const unparseable = new Set(
-        parse(raw, probeToBlock).filter((d) => /^TS1\d{3}$/.test(d.code)).map((d) => d.b.probe),
-      )
-      if (unparseable.size > 0) {
-        raw += compile(tsc, ownerDir, out, mine.map((b) => b.probe), nodeTyped, unparseable)
-        for (const probe of unparseable) {
-          const b = probeToBlock.get(probe)
-          failures.push(`${relative(root, b.file)}:${b.line}: not parseable as TypeScript — re-fence it as \`\`\`text (a signature listing is not a program)`)
-        }
-      }
+      const pass1 = parse(compile(tsc, ownerDir, out, files, nodeTyped, new Set()), local)
+      const skip = blocksToExclude(pass1)
+      for (const probe of skip) excluded.push(local.get(probe))
+      diagnostics.push(...parse(compile(tsc, ownerDir, out, files, nodeTyped, skip), local))
     }
   } finally {
     for (const ownerDir of owned.keys()) rmSync(join(ownerDir, PROBE_DIR), { recursive: true, force: true })
@@ -247,7 +316,7 @@ export function runProseExamples(root, cfg) {
     return name !== undefined && published.has(name)
   }
 
-  for (const d of parse(raw, probeToBlock)) {
+  for (const d of diagnostics) {
     if (/^TS1\d{3}$/.test(d.code)) continue
     if (!isMissingImport(d) && IGNORED.has(d.code)) continue
     // `line + row - 1 - preambleLines`; a row inside the preamble reports at
@@ -258,11 +327,31 @@ export function runProseExamples(root, cfg) {
     failures.push(`${relative(root, d.b.file)}:${row}  ${d.code}  ${d.msg}`)
   }
 
-  for (const file of missingPreamble) {
-    failures.push(`${file}: has import-less fenced blocks and no <!-- prose-preamble -->; those blocks compile with nothing typed`)
+  // ⛔ THE PREAMBLE RULE FIRES ON A DIAGNOSTIC, NOT ON THE MARKER'S ABSENCE.
+  // The first version demanded a preamble from the mere EXISTENCE of an
+  // import-less block, which failed `as` on four blocks that have no free names
+  // at all — there was nothing for a preamble to declare. The rule the
+  // convention actually states is "declare the elided binding", so the trigger
+  // is a binding that was elided: an ignored TS2304/TS2552 (a free name we do
+  // NOT publish; a published one is a missing import, reported above).
+  const freeNames = new Set(
+    diagnostics
+      .filter((d) => (d.code === 'TS2304' || d.code === 'TS2552') && !isMissingImport(d))
+      .map((d) => d.b.file),
+  )
+  for (const { rel, file } of missingPreamble) {
+    if (!freeNames.has(file)) continue
+    failures.push(`${rel}: has import-less fenced blocks that use undeclared bindings, and no <!-- prose-preamble -->; those bindings compile as \`any\`, which is the laundering the convention exists to stop`)
   }
 
-  return { failures }
+  // Named, never counted: the exclusion cannot grow silently. Illustrative-only
+  // is a CONSEQUENCE of not being a program, not an opt-out a writer can claim.
+  if (excluded.length > 0) {
+    notes.push(`${excluded.length} block(s) excluded as not-a-program (signature listings, templates):`)
+    for (const b of excluded) notes.push(`  ${relative(root, b.file)}:${b.line}`)
+  }
+
+  return { failures, notes }
 }
 
 function compile(tsc, cwd, out, files, nodeTyped, exclude) {
@@ -276,7 +365,8 @@ function compile(tsc, cwd, out, files, nodeTyped, exclude) {
       // ⛔ EXPLICIT, never defaulted and never a blanket []. See the header.
       types: nodeTyped ? ['node'] : [],
     },
-    files: use.map((f) => relative(out, join(cwd, f))),
+    // `ambient.d.ts` joins EVERY program — see where it is written.
+    files: [...use.map((f) => relative(out, join(cwd, f))), 'ambient.d.ts'],
   }, null, 2))
   try {
     execFileSync(process.execPath, [tsc, '-p', relative(cwd, cfgPath)], { cwd, encoding: 'utf8', stdio: 'pipe' })
