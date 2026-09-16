@@ -1,7 +1,9 @@
 // The publish gate is the TRIGGER, so the trigger is what the test pins.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { TOOLS } from './helpers.mjs'
 
@@ -114,11 +116,14 @@ test('peer-floor installs unfrozen — the floor install rewrites the tree', () 
   assert.match(job, /cli\.mjs peer-floor --root \./)
 })
 
-test('verify refuses a CHANGELOG version section with no bullets — a heading is not the notes', () => {
+test('verify refuses a CHANGELOG version section with no content — a heading is not the notes', () => {
   // as#5, 2026-09-15: a public option merged under an empty "## Unreleased".
   const y = release()
   const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
-  assert.match(verify, /has no bullet/)
+  assert.match(verify, /has no content/)
+  // non-blank lines, not bullets: hub's prose essay and the 33 lockstep one-liners must pass
+  assert.match(verify, /grep -cvE '\^\\s\*\$'/)
+  assert.match(verify, /ENVIRON\["H"\]/, 'awk -v mangles the escapes into a character class')
   assert.match(verify, /\[ "\$empty" = "0" \]/)
 })
 
@@ -133,4 +138,25 @@ test('the CHANGELOG version predicate is END-ANCHORED — "## 0.8.0-pre.0" must 
   for (const p of patterns) assert.match(p, /\( \|\$\)$/, `unanchored: ${p}`)
   // and the awk header in the bullet loop is anchored too
   assert.match(verify, /\\\\\]\?\( \|\$\)"/)
+})
+
+test('the CHANGELOG content predicate, EXECUTED: empty section fails, prose passes, pre-release heading does not satisfy stable', (t) => {
+  // The YAML-grep tests above cannot see that `awk -v` turned the pattern into a
+  // character class and the loop never fired. This runs the real step body.
+  const y = release()
+  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
+  const start = verify.indexOf('empty=0')
+  const body = verify.slice(start, verify.indexOf('[ "$empty" = "0" ]', start) + '[ "$empty" = "0" ]'.length)
+    .split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n')
+  const dir = mkdtempSync(join(tmpdir(), 'cl-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const run = (changelog) => {
+    writeFileSync(join(dir, 'CHANGELOG.md'), changelog)
+    execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: dir })
+    try { execFileSync('bash', ['-c', `set -uo pipefail; v=0.8.0\n${body}`], { cwd: dir, stdio: 'pipe' }); return 0 } catch (e) { return e.status }
+  }
+  assert.equal(run('# x\n## 0.8.0\n\n## 0.7.0\n- old\n'), 1, 'empty stable section must fail')
+  assert.equal(run('# x\n## 0.8.0\nLockstep bump; see hub.\n## 0.7.0\n- old\n'), 0, 'prose is content')
+  assert.equal(run('# x\n## 0.8.0\n- a bullet\n'), 0, 'a bullet is content')
+  assert.equal(run('# x\n## 0.8.0-pre.0\n- pre notes\n'), 0, 'no stable heading at all is the OTHER predicate\'s job; this loop must not misread pre as stable')
 })

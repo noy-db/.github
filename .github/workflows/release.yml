@@ -121,13 +121,23 @@ jobs:
           # ⛔ AND IT MUST NOT BE EMPTY. as#5 merged a public option on two packages with
           # an empty "## Unreleased"; the section would have existed at cut time with
           # nothing in it, and the notes a consumer reads would not have mentioned the
-          # option. A heading is a promise; the bullets are the notes. Measured
-          # 2026-09-15: as 4 source commits / 0 bullets, at 2 / 0.
+          # option. A heading is a promise; the notes are the content. Measured
+          # 2026-09-15: as 4 source commits / 0 lines, at 2 / 0.
+          # ⚠️ NON-BLANK LINES, NOT BULLETS. The first version counted `^[-*]` and
+          # flagged all 34 of core's 0.8.0 sections as empty — hub's 50-line
+          # hand-written release essay included, and the 33 lockstep one-liners
+          # written to satisfy this very gate. Prose is notes. A gate that
+          # rejects the best-written section in the family is measuring
+          # punctuation.
           empty=0
           for f in $(git ls-files '*CHANGELOG.md'); do
-            body=$(awk -v h="^## +\\[?${v//./\\.}\\]?( |$)" '$0 ~ h {f=1; next} /^## /{f=0} f' "$f" | grep -cE '^\s*[-*]' || true)
+            # ⛔ ENVIRON, NOT -v. `awk -v` processes backslash escapes, so the pattern
+            # arrives as `^## +[?0.8.0]?( |$)` — a CHARACTER CLASS that matches nothing.
+            # As first written (#15) this loop never flagged anything: a gate that
+            # cannot fire, discovered only because it also refused hub's real essay.
+            body=$(H="^## +\\[?${v//./\\.}\\]?( |$)" awk '$0 ~ ENVIRON["H"] {f=1; next} /^## /{f=0} f' "$f" | grep -cvE '^\s*$' || true)
             if grep -qE "^## +\[?${v//./\\.}\]?( |$)" "$f" && [ "$body" = "0" ]; then
-              echo "::error::${f}: the ${v} section has no bullet — a heading with no notes"
+              echo "::error::${f}: the ${v} section has no content — a heading with no notes"
               empty=1
             fi
           done
