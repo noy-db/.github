@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdtempSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
 import { runProseExamples, collectPublishedNames } from '../src/gates/prose-examples.mjs'
@@ -303,4 +303,36 @@ test('⛔ no fixture symlink resolves inside itself — a cycle breaks setup-fam
     if (link === target || link.startsWith(target + sep)) offenders.push(`${link} -> ${readlinkSync(link)}`)
   }
   assert.deepEqual(offenders, [])
+})
+
+test('⛔ a declared type package the probe cannot resolve is cannot-run, never green', (t) => {
+  // THE LIVE CASE: a package declares @types/node, so the gate asks for
+  // `types: ['node']`, and the probe cannot resolve it — a partial install, a
+  // pruned CI cache, a workspace whose types were never hoisted.
+  //
+  // ⛔ TS2688 carries NO FILE, so the diagnostic parser drops it, and tsc's
+  // semantic checking is compromised for the whole program. Without this
+  // branch the gate reports SUCCESS on a program it barely looked at.
+  //
+  // Found while testing something else entirely: an assertion that a real
+  // TS2322 still fires FAILED, because the fixture had no @types/node and
+  // every block was passing vacuously. The gate could not see its own
+  // blindness — the class it exists to refuse.
+  const root = copyHere(t, 'workspace-prose')
+  const manifest = join(root, 'packages', 'lib', 'package.json')
+  const json = JSON.parse(readFileSync(manifest, 'utf8'))
+  json.devDependencies = { '@types/node': '^22.0.0' }   // declared, never installed
+  writeFileSync(manifest, JSON.stringify(json, null, 2) + '\n')
+
+  const res = gate(root)
+  assert.equal(res.status, 'cannot-run', JSON.stringify(res))
+  assert.match(res.cannotRun, /TS2688/)
+  assert.deepEqual(res.failures, [], 'it did not get far enough to have findings')
+})
+
+test('…and the same tree WITHOUT the unresolvable declaration is green — the guard is not blanket', (t) => {
+  const root = copyHere(t, 'workspace-prose')
+  const res = gate(root)
+  assert.equal(res.status, undefined)
+  assert.deepEqual(res.failures, [])
 })

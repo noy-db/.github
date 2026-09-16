@@ -255,6 +255,7 @@ export function runProseExamples(root, cfg) {
   // could not show it, because a fixture has one package.
   const probeToBlock = new Map()
   const diagnostics = []
+  let configError = null
   const excluded = []
   try {
     for (const [ownerDir] of owned) {
@@ -300,13 +301,40 @@ export function runProseExamples(root, cfg) {
       })
       const files = mine.map((b) => b.probe)
 
-      const pass1 = parse(compile(tsc, ownerDir, out, files, nodeTyped, new Set()), local)
+      const first = compile(tsc, ownerDir, out, files, nodeTyped, new Set())
+      // ⛔ TS2688 IS A VACUITY BUG, NOT A DIAGNOSTIC. "Cannot find type
+      // definition file for 'node'" carries NO FILE, so `parse` drops it — and
+      // tsc's semantic checking is compromised for the whole program, so the
+      // run goes GREEN having checked nothing.
+      //
+      // The live case: a package DECLARES @types/node, so this asks for
+      // `types: ['node']`, and the probe cannot resolve it — a partial install,
+      // a pruned CI cache, a workspace whose types were never hoisted. The gate
+      // then reports success on a program tsc barely looked at.
+      //
+      // Found while testing something else: an assertion that a real TS2322
+      // still fires FAILED, because the fixture had no @types/node and every
+      // block was passing vacuously. The gate could not see its own blindness,
+      // which is the whole class it exists to refuse.
+      if (/error TS2688/.test(first)) {
+        configError = first.split('\n').find((l) => /error TS2688/.test(l))?.trim()
+      }
+      const pass1 = parse(first, local)
       const skip = blocksToExclude(pass1)
       for (const probe of skip) excluded.push(local.get(probe))
       diagnostics.push(...parse(compile(tsc, ownerDir, out, files, nodeTyped, skip), local))
     }
   } finally {
     for (const ownerDir of owned.keys()) rmSync(join(ownerDir, PROBE_DIR), { recursive: true, force: true })
+  }
+
+  if (configError) {
+    return {
+      failures: [],
+      notes: [],
+      status: 'cannot-run',
+      cannotRun: `the probe could not resolve a declared type package, so tsc checked nothing: ${configError}. Install dependencies — a package declaring @types/node needs it present.`,
+    }
   }
 
   /** A TS2304/TS2552 naming something we publish is a missing import, not probe noise. */
