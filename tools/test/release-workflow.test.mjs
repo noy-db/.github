@@ -116,47 +116,9 @@ test('peer-floor installs unfrozen — the floor install rewrites the tree', () 
   assert.match(job, /cli\.mjs peer-floor --root \./)
 })
 
-test('verify refuses a CHANGELOG version section with no content — a heading is not the notes', () => {
-  // as#5, 2026-09-15: a public option merged under an empty "## Unreleased".
+test('verify runs the per-package changelog census (not a repo-wide grep)', () => {
   const y = release()
   const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
-  assert.match(verify, /has no content/)
-  // non-blank lines, not bullets: hub's prose essay and the 33 lockstep one-liners must pass
-  assert.match(verify, /grep -cvE '\^\\s\*\$'/)
-  assert.match(verify, /ENVIRON\["H"\]/, 'awk -v mangles the escapes into a character class')
-  assert.match(verify, /\[ "\$empty" = "0" \]/)
-})
-
-test('the CHANGELOG version predicate is END-ANCHORED — "## 0.8.0-pre.0" must not satisfy the 0.8.0 check', () => {
-  // at shipped 0.8.0 on 2026-09-13 with no 0.8.0 section and a green gate; the
-  // pre-release heading matched the unanchored pattern. Measured 2026-09-15:
-  // exact 0.8.0 sections in 2 of 58 CHANGELOGs family-wide; all 58 matched loosely.
-  const y = release()
-  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
-  const patterns = verify.match(/\^## \+\\\[\?\$\{v\/\/\.\/\\\\\.\}\\\]\?[^"']*/g) ?? []
-  assert.ok(patterns.length >= 2, `expected the version pattern at least twice, got ${patterns.length}`)
-  for (const p of patterns) assert.match(p, /\( \|\$\)$/, `unanchored: ${p}`)
-  // and the awk header in the bullet loop is anchored too
-  assert.match(verify, /\\\\\]\?\( \|\$\)"/)
-})
-
-test('the CHANGELOG content predicate, EXECUTED: empty section fails, prose passes, pre-release heading does not satisfy stable', (t) => {
-  // The YAML-grep tests above cannot see that `awk -v` turned the pattern into a
-  // character class and the loop never fired. This runs the real step body.
-  const y = release()
-  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
-  const start = verify.indexOf('empty=0')
-  const body = verify.slice(start, verify.indexOf('[ "$empty" = "0" ]', start) + '[ "$empty" = "0" ]'.length)
-    .split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n')
-  const dir = mkdtempSync(join(tmpdir(), 'cl-'))
-  execFileSync('git', ['init', '-q'], { cwd: dir })
-  const run = (changelog) => {
-    writeFileSync(join(dir, 'CHANGELOG.md'), changelog)
-    execFileSync('git', ['add', 'CHANGELOG.md'], { cwd: dir })
-    try { execFileSync('bash', ['-c', `set -uo pipefail; v=0.8.0\n${body}`], { cwd: dir, stdio: 'pipe' }); return 0 } catch (e) { return e.status }
-  }
-  assert.equal(run('# x\n## 0.8.0\n\n## 0.7.0\n- old\n'), 1, 'empty stable section must fail')
-  assert.equal(run('# x\n## 0.8.0\nLockstep bump; see hub.\n## 0.7.0\n- old\n'), 0, 'prose is content')
-  assert.equal(run('# x\n## 0.8.0\n- a bullet\n'), 0, 'a bullet is content')
-  assert.equal(run('# x\n## 0.8.0-pre.0\n- pre notes\n'), 0, 'no stable heading at all is the OTHER predicate\'s job; this loop must not misread pre as stable')
+  assert.match(verify, /cli\.mjs changelog-census --root \./)
+  assert.doesNotMatch(verify, /grep -rqE "\^## /, 'the existential grep must be gone')
 })

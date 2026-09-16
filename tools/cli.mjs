@@ -5,6 +5,7 @@
 // The ONLY place in this package that prints or exits. Every gate module
 // returns { failures } so a test can assert on the data instead of scraping
 // stdout.
+import { runChangelogCensus } from './src/release/changelog.mjs'
 import { resolve } from 'node:path'
 import { loadConfig, loadConfigFile } from './src/config.mjs'
 import { runArchitecture } from './src/gates/architecture.mjs'
@@ -32,7 +33,7 @@ const GATES = {
   'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
 }
 
-const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census']
+const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census']
 
 function parseArgs(argv) {
   const opts = {
@@ -132,6 +133,18 @@ async function main(argv) {
     }
     const result = await census(names, String(version).trim())
     return censusReport(result)
+  }
+
+  // ⛔ Per PUBLISHABLE PACKAGE, not per file. The YAML grep it replaces was
+  // existential over the repo (one heading satisfied 36 packages) and blind to
+  // a package with no CHANGELOG.md. See src/release/changelog.mjs.
+  if (opts.gate === 'changelog-census') {
+    const [version] = snapshotReport(root, cfg, { version: true })
+    const { failures, checked } = runChangelogCensus(root, cfg, String(version).trim())
+    if (failures.length === 0) { console.log(`✓ CHANGELOG ${String(version).trim()} section present with content in ${checked}/${checked} publishable packages`); return 0 }
+    for (const f of failures) console.error(`✗ ${f}`)
+    console.error(`✗ CHANGELOG census FAILED (${failures.length} of ${checked})`)
+    return 1
   }
 
   const entry = GATES[opts.gate]
