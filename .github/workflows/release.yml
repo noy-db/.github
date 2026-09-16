@@ -104,44 +104,16 @@ jobs:
             exit 1
           fi
 
-      # ⛔ ANCHORED. Without `( |$)` the pattern for 0.8.0 also matches the heading
-      # `## 0.8.0-pre.0`, which is how at shipped 0.8.0 on 2026-09-13 with NO 0.8.0
-      # section and a green gate — the pre-release heading satisfied the stable
-      # check. Found by at while writing the section a day later.
-      - name: CHANGELOG has a section for this version
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          v="${TAG#v}"
-          if ! grep -rqE "^## +\[?${v//./\\.}\]?( |$)" --include=CHANGELOG.md .; then
-            echo "::error::no CHANGELOG.md section titled ${v}"
-            exit 1
-          fi
-          # ⛔ AND IT MUST NOT BE EMPTY. as#5 merged a public option on two packages with
-          # an empty "## Unreleased"; the section would have existed at cut time with
-          # nothing in it, and the notes a consumer reads would not have mentioned the
-          # option. A heading is a promise; the notes are the content. Measured
-          # 2026-09-15: as 4 source commits / 0 lines, at 2 / 0.
-          # ⚠️ NON-BLANK LINES, NOT BULLETS. The first version counted `^[-*]` and
-          # flagged all 34 of core's 0.8.0 sections as empty — hub's 50-line
-          # hand-written release essay included, and the 33 lockstep one-liners
-          # written to satisfy this very gate. Prose is notes. A gate that
-          # rejects the best-written section in the family is measuring
-          # punctuation.
-          empty=0
-          for f in $(git ls-files '*CHANGELOG.md'); do
-            # ⛔ ENVIRON, NOT -v. `awk -v` processes backslash escapes, so the pattern
-            # arrives as `^## +[?0.8.0]?( |$)` — a CHARACTER CLASS that matches nothing.
-            # As first written (#15) this loop never flagged anything: a gate that
-            # cannot fire, discovered only because it also refused hub's real essay.
-            body=$(H="^## +\\[?${v//./\\.}\\]?( |$)" awk '$0 ~ ENVIRON["H"] {f=1; next} /^## /{f=0} f' "$f" | grep -cvE '^\s*$' || true)
-            if grep -qE "^## +\[?${v//./\\.}\]?( |$)" "$f" && [ "$body" = "0" ]; then
-              echo "::error::${f}: the ${v} section has no content — a heading with no notes"
-              empty=1
-            fi
-          done
-          [ "$empty" = "0" ]
+      # ⛔ PER PUBLISHABLE PACKAGE, via the same walker every gate uses. Three
+      # predecessors of this step were each wrong in a way the YAML-grep tests
+      # could not see: unanchored (a pre-release heading satisfied the stable
+      # check — 0.8.0 shipped with 56 of 58 changelogs sectionless), then
+      # existential (`grep -r` over the repo — one heading satisfied 36
+      # packages, and a package with NO CHANGELOG.md was invisible), then a
+      # bullet loop whose awk -v pattern was a character class and never
+      # fired. The predicate now lives in family-tools with executing tests.
+      - name: Every publishable package's CHANGELOG has a section for this version, with content
+        run: node .family-tools/tools/cli.mjs changelog-census --root .
 
   # ⛔ A CHECK THAT IS NOT IN THE RELEASE PATH CANNOT GATE A RELEASE. This lived
   # only as a Monday-06:00 cron in each caller, so when 0.8.0 shipped, THREE
