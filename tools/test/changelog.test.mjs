@@ -38,3 +38,15 @@ test('census: green when every publishable package has a non-empty section', (t)
   for (const d of ['as-good', 'as-bad', 'as-aws-s3']) writeFileSync(join(root, d, 'CHANGELOG.md'), `# ${d}\n## 0.8.0\nLockstep bump to 0.8.0; see hub.\n`)
   assert.deepEqual(runChangelogCensus(root, cfg, '0.8.0').failures, [])
 })
+
+test('census: a flat repo with ONE root CHANGELOG.md covers every package that has none of its own', (t) => {
+  // as/on/at keep a single root changelog; at wrote its 0.8.0 section there.
+  const root = copyFixture(t, 'flat-as')
+  const cfg = loadConfig(root)
+  for (const d of ['as-good', 'as-bad', 'as-aws-s3']) rmSync(join(root, d, 'CHANGELOG.md'), { force: true })
+  writeFileSync(join(root, 'CHANGELOG.md'), '# as\n## 0.8.0\nAll ten published as themselves.\n')
+  assert.deepEqual(runChangelogCensus(root, cfg, '0.8.0').failures, [])
+  // and an EMPTY root section still fails every package it covers
+  writeFileSync(join(root, 'CHANGELOG.md'), '# as\n## 0.8.0\n\n## 0.7.0\n- old\n')
+  assert.equal(runChangelogCensus(root, cfg, '0.8.0').failures.length, 3)
+})

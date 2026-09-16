@@ -44,8 +44,13 @@ export function runChangelogCensus(root, cfg, version) {
     .filter(({ json }) => cfg.layout === 'single' || !json.private)
   for (const { dir, json } of pkgs) {
     const where = `${rel(dir)} (${json.name})`
-    const file = join(dir, 'CHANGELOG.md')
-    if (!existsSync(file)) { failures.push(`${where}: no CHANGELOG.md at all`); continue }
+    // A flat repo may keep ONE root CHANGELOG.md for every package (as/on/at
+    // do; to and ui are per-package). A package with no changelog of its own
+    // is covered by the root one; a package with neither is the failure.
+    // Measured 2026-09-16: the first census flagged as/on/at 100% for this.
+    let file = join(dir, 'CHANGELOG.md')
+    if (!existsSync(file)) file = join(root, 'CHANGELOG.md')
+    if (!existsSync(file)) { failures.push(`${where}: no CHANGELOG.md at all (neither its own nor a root one)`); continue }
     const section = versionSection(readFileSync(file, 'utf8'), version)
     if (section === null) failures.push(`${where}: CHANGELOG.md has no "## ${version}" section`)
     else if (!hasContent(section)) failures.push(`${where}: the ${version} section has no content — a heading with no notes`)
