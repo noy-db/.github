@@ -14,6 +14,7 @@ import { runDeclaredDeps } from './src/gates/declared-deps.mjs'
 import { runCodemodRows } from './src/gates/codemod-rows.mjs'
 import { runCheckLicense } from './src/gates/check-license.mjs'
 import { runPeerFloor } from './src/gates/peer-floor.mjs'
+import { runProseExamples } from './src/gates/prose-examples.mjs'
 import { prepareSnapshot } from './src/snapshot/prepare.mjs'
 import { snapshotReport } from './src/snapshot/report.mjs'
 import { census, report as censusReport } from './src/release/census.mjs'
@@ -31,6 +32,7 @@ const GATES = {
   'declared-deps': { label: 'Declared dependencies', run: runDeclaredDeps },
   'codemod-rows': { label: 'Codemod rows', run: runCodemodRows },
   'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
+  'prose-examples': { label: 'Shipped examples compile', run: runProseExamples },
 }
 
 const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census']
@@ -68,9 +70,19 @@ function parseArgs(argv) {
   return opts
 }
 
+// ⚠️ THE PIPE TRAP, in the help because it is where someone looks after being
+// confused by it. `family-tools <gate> … | head` reports `$?` from HEAD, not
+// from the gate: `as` nearly filed a FAILING prose run as passing on its first
+// look, and `to` recorded the same shape on 2026-09-11. The summary line below
+// (`✓ … OK` / `✗ … FAILED (n)`) exists so the eye never needs `$?` — but a
+// pipe can also truncate that line away, which is exactly how it bites.
 const usage = () =>
   `usage: family-tools <${COMMANDS.join('|')}> [--root path] [--config path] [--print]\n` +
-  `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]`
+  `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]\n` +
+  `\n` +
+  `⚠️  Do NOT pipe this command when you care about its exit code — \`… | head\`\n` +
+  `    gives you head's status, not the gate's. Redirect to a file and read the\n` +
+  `    final summary line, or check \${PIPESTATUS[0]}.`
 
 function report(label, failures) {
   for (const f of failures) console.error(`✗ ${line(f)}`)
@@ -153,7 +165,8 @@ async function main(argv) {
     return 2
   }
 
-  const { failures, status } = entry.run(root, cfg)
+  const res = entry.run(root, cfg)
+  const { failures, status } = res
   // `no-hub` is NOT a violation. codemod-rows reads its maps from the installed
   // @noy-db/hub, so an unresolvable hub means the gate could not run — exit 2,
   // distinct from the exit 1 that means a row is untrue. Collapsing the two
@@ -162,6 +175,19 @@ async function main(argv) {
     console.error('✗ cannot resolve @noy-db/hub — install dependencies first')
     return 2
   }
+  // ⛔ SAME REASONING, GENERALISED. A gate that COULD NOT RUN is exit 2, never
+  // the exit 0 of a clean pass: prose-examples reports this when it finds no
+  // compiler, no built entry points, or zero blocks — each of which would
+  // otherwise be a green run that examined nothing. The distinct code is what
+  // stops a CI step reading "could not run" as "passed".
+  if (status === 'cannot-run') {
+    console.error(`✗ ${entry.label}: ${res.cannotRun}`)
+    return 2
+  }
+  // Notes are NAMED, not counted, and printed whether or not the gate passes:
+  // prose-examples uses them for blocks excluded as not-a-program, so the
+  // exclusion cannot grow silently into a gate that checks nothing.
+  for (const note of res.notes ?? []) console.log(`  ${note}`)
   return report(entry.label, failures)
 }
 

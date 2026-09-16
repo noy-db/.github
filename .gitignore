@@ -5,3 +5,12 @@ node_modules/
 # relative symlink to the sibling fixture package, not an installed tree — the
 # blanket node_modules/ rule above would swallow it.
 !tools/fixtures/workspace/packages/a/node_modules/
+
+# Same reason, for the prose-examples gate: `at` measured (family#26) that a
+# flat workspace has no hoisted @noy-db/* at the repo root, so the gate compiles
+# each README INSIDE its owning package and the fixture must therefore resolve
+# its own package name from there. Another committed relative symlink.
+# ⛔ Without this line the fixture's node_modules is swallowed, the tests still
+# pass LOCALLY against the developer's working copy, and CI fails on a checkout
+# that never had the link — the ignored-file-the-tests-depend-on trap.
+!tools/fixtures/workspace-prose/packages/lib/node_modules/

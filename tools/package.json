@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "semver": "^7.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }
