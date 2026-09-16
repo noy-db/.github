@@ -53,7 +53,8 @@
           "versions-uniform",
           "declared-deps",
           "codemod-rows",
-          "check-license"
+          "check-license",
+          "prose-examples"
         ]
       }
     },
@@ -74,6 +75,13 @@
     "allowHubRoot": {
       "description": "Adds the @noy-db/hub ROOT BARREL to the subpaths this repo's bound seam may import. doi-db binds /to but needs isConflictError, which /to does not export.",
       "type": "boolean"
+    },
+    "proseSources": {
+      "description": "Extra source files whose JSDoc module comment ships inside the published .d.ts, and is therefore shipped prose the prose-examples gate checks (core: packages/hub/src/index.ts). Paths are relative to the repo root; each file's blocks compile inside the directory that owns it.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "conformanceKit": {
       "description": "Test symbol the as-conformance-fixture rule looks for; omit to disable that rule.",

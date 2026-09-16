@@ -1,0 +1,7 @@
+{
+  "layout": "workspace",
+  "manager": "pnpm",
+  "binds": null,
+  "publishes": true,
+  "gates": ["prose-examples"]
+}
