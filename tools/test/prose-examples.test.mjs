@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { cpSync, existsSync, mkdtempSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve, sep } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
 import { runProseExamples, collectPublishedNames } from '../src/gates/prose-examples.mjs'
 import { FIXTURES, TOOLS } from './helpers.mjs'
@@ -269,4 +269,38 @@ test('the probe directory is removed even when the run fails', (t) => {
   const res = gate(root)
   assert.ok(res.failures.length > 0, 'the mutation must actually fail, or this proves nothing')
   assert.equal(existsSync(join(root, 'packages', 'lib', '.prose-examples')), false)
+})
+
+// ─── fixture hygiene, repo-wide ─────────────────────────────────────────────
+
+test('⛔ no fixture symlink resolves inside itself — a cycle breaks setup-family for EVERY repo', () => {
+  // THE INCIDENT (2026-09-16). This gate's first fixture committed
+  // `packages/lib/node_modules/@fixture/lib -> ../..`, pointing back at the
+  // package that CONTAINS it. Local tests passed; `npm test` passed; the gate
+  // passed on five real trees. Then `setup-family` staged the .github repo for
+  // every consumer and died on "Too many levels of symbolic links", failing the
+  // config job — the FIRST job — in every repo on @v1 at once.
+  //
+  // ⭐ The symlink was not only harmful, it was unnecessary: a package
+  // self-references through its own `name` + `exports`, with no node_modules
+  // entry at all. The fixture resolves `@fixture/lib` today with nothing there.
+  //
+  // Scoped to the whole fixtures tree, not to this gate's: the blast radius is
+  // the action, so any fixture can cause it.
+  const walk = (dir, out = []) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isSymbolicLink()) { out.push(p); continue }
+      if (e.isDirectory()) walk(p, out)
+    }
+    return out
+  }
+  const offenders = []
+  for (const link of walk(FIXTURES)) {
+    const target = resolve(dirname(link), readlinkSync(link))
+    // A link that resolves to one of its own ancestors is a cycle: walking into
+    // it re-enters the link, forever.
+    if (link === target || link.startsWith(target + sep)) offenders.push(`${link} -> ${readlinkSync(link)}`)
+  }
+  assert.deepEqual(offenders, [])
 })
