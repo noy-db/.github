@@ -96,6 +96,35 @@ test('the empty-scope guard does not need a compiler — a broken scope must not
   assert.match(res.cannotRun, /ZERO fenced blocks/)
 })
 
+// ─── the departed-package rule ──────────────────────────────────────────────
+
+test('⭐ an import of a package the workspace neither holds nor declares is a finding', (t) => {
+  // The TS2307 ignore exists for a sibling that is not built HERE. A package
+  // that exists NOWHERE produces the same code, and until this rule the gate
+  // could not tell them apart — a README kept teaching `@noy-db/to-memory` for
+  // a day after the directory left the repo, green throughout.
+  const root = copyHere(t, 'workspace-prose')
+  setReadme(root, ['# @fixture/lib', '', '```ts', "import { gone } from '@fixture/gone'", "const out: string = gone('x')", '```', ''].join('\n'))
+  const res = gate(root)
+  assert.equal(res.status, undefined, `expected a real run, got cannot-run: ${res.cannotRun}`)
+  assert.equal(res.failures.length, 1, JSON.stringify(res.failures))
+  assert.match(res.failures[0], /TS2307.*@fixture\/gone/)
+})
+
+test('an import of a DECLARED sibling that is not built here stays ignored', (t) => {
+  // The other half: declaring the package is how the workspace vouches for
+  // it. Same TS2307, no finding — the ignore keeps its legitimate case.
+  const root = copyHere(t, 'workspace-prose')
+  const pkgPath = join(root, 'packages', 'lib', 'package.json')
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+  pkg.devDependencies = { '@fixture/sibling': '1.0.0' }
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
+  setReadme(root, ['# @fixture/lib', '', '```ts', "import { sib } from '@fixture/sibling/sub'", "const out: string = sib('x')", '```', ''].join('\n'))
+  const res = gate(root)
+  assert.equal(res.status, undefined, `expected a real run, got cannot-run: ${res.cannotRun}`)
+  assert.deepEqual(res.failures, [])
+})
+
 // ─── the build-order vacuity guard ──────────────────────────────────────────
 
 test('no built entry point is cannot-run — every import would be an ignored TS2307', (t) => {

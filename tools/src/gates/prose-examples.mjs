@@ -45,7 +45,12 @@ const PROBE_DIR = '.prose-examples'
 // legitimately name an export that does not exist.
 const IGNORED = new Set([
   'TS2304',  // cannot find name            — elided variable
-  'TS2307',  // cannot find module          — sibling package not built here
+  'TS2307',  // cannot find module          — sibling package not built here.
+             //   ⛔ ONLY for a package the workspace KNOWS (a member, or declared
+             //   in some package.json). A bare specifier the workspace neither
+             //   holds nor declares is a DEPARTED package, reported below —
+             //   measured 2026-09-17: hub's quickstart imported `@noy-db/to-memory`
+             //   for a day after the directory left, and this ignore said OK.
   'TS2552',  // cannot find name (did-you-mean form of 2304)
   'TS18004', // no value in scope for shorthand property `{ store, user }`
   'TS18046', // 'x' is of type 'unknown'    — cascade from an elided type
@@ -68,6 +73,7 @@ const IGNORED = new Set([
 // (`userSecret`, `opts`, `mockClient`) are absent from the published surface
 // and stay ignored.
 const NAMED = /Cannot find name '([^']+)'/
+const MODULE = /Cannot find module '([^']+)'/
 
 /** Names exported from any PUBLISHED entry point of any package in this repo. */
 export function collectPublishedNames(dirs) {
@@ -337,6 +343,29 @@ export function runProseExamples(root, cfg) {
     }
   }
 
+  // Every package name the workspace can vouch for: its own members, and
+  // everything any member declares. A TS2307 on one of these is "not built
+  // here" and stays ignored; on anything else it is prose teaching an import
+  // that resolves nowhere, which is indistinguishable to a reader from a
+  // typo in `pnpm add`.
+  const known = new Set()
+  for (const dir of [root, ...dirs]) {
+    if (!existsSync(join(dir, 'package.json'))) continue
+    const pkg = readPkg(dir)
+    if (pkg.name) known.add(pkg.name)
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      for (const name of Object.keys(pkg[field] ?? {})) known.add(name)
+    }
+  }
+  /** A TS2307 on a bare specifier the workspace neither holds nor declares. */
+  const isDepartedImport = (d) => {
+    if (d.code !== 'TS2307') return false
+    const spec = MODULE.exec(d.msg)?.[1]
+    if (spec === undefined || spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('node:')) return false
+    const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+    return !known.has(name)
+  }
+
   /** A TS2304/TS2552 naming something we publish is a missing import, not probe noise. */
   const isMissingImport = (d) => {
     if (d.code !== 'TS2304' && d.code !== 'TS2552') return false
@@ -346,7 +375,7 @@ export function runProseExamples(root, cfg) {
 
   for (const d of diagnostics) {
     if (/^TS1\d{3}$/.test(d.code)) continue
-    if (!isMissingImport(d) && IGNORED.has(d.code)) continue
+    if (!isMissingImport(d) && !isDepartedImport(d) && IGNORED.has(d.code)) continue
     // `line + row - 1 - preambleLines`; a row inside the preamble reports at
     // the preamble's own line rather than a phantom offset into the block.
     const row = d.b.preambleLines > 0 && d.row <= d.b.preambleLines
