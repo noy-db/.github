@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
 import { computeFloors, resolveWorkspaceRange, floorKey, pinnedRootText, planGroups } from '../src/gates/peer-floor.mjs'
@@ -158,4 +158,25 @@ test('computeFloors reports the DECLARED string, not the resolved one', () => {
     () => computeFloors({ peerDependencies: { '@noy-db/hub': 'not-a-range' } }, {}),
     /"not-a-range"/,
   )
+})
+
+// --- a sibling floor the tree satisfies is not pinned (added 2026-09-18) ----
+// The run that publishes to@0.8.1 floored to-supabase's `workspace:^` peer at
+// to-postgres@0.8.1 and pinned it as an override — a version npm gains only if
+// that same run succeeds. Install failed, publish was skipped.
+
+test('planGroups leaves a floor out of pins when the tree carries that exact version', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const sib = join(root, 'packages', 'sib', 'package.json')
+  mkdirSync(join(root, 'packages', 'sib'), { recursive: true })
+  writeFileSync(sib, JSON.stringify({ name: '@noy-db/sib', version: '0.8.1', peerDependencies: { '@noy-db/hub': '^0.8.0' } }))
+  const dep = join(root, 'packages', 'dep', 'package.json')
+  mkdirSync(join(root, 'packages', 'dep'), { recursive: true })
+  writeFileSync(dep, JSON.stringify({ name: '@noy-db/dep', version: '0.8.1', peerDependencies: { '@noy-db/hub': '^0.8.0', '@noy-db/sib': 'workspace:^' } }))
+  const { groups, errors } = planGroups(root, JSON.parse(readFileSync(join(root, 'family.config.json'), 'utf8')))
+  assert.deepEqual(errors, [])
+  const g = groups.find((x) => x.packages.some((p) => p.name === '@noy-db/dep'))
+  assert.deepEqual(g.floors, { '@noy-db/hub': '0.8.0', '@noy-db/sib': '0.8.1' })
+  // hub is a real registry floor; the sibling is the tree itself.
+  assert.deepEqual(g.pins, { '@noy-db/hub': '0.8.0' })
 })
