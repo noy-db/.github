@@ -207,7 +207,18 @@ export function planGroups(root, cfg) {
       continue
     }
     const key = floorKey(floors)
-    if (!byKey.has(key)) byKey.set(key, { key, floors, packages: [] })
+    // ⛔ A FLOOR THE TREE ITSELF SATISFIES MUST NOT BE PINNED FROM THE REGISTRY.
+    // A `workspace:^` peer on a sibling floors at the sibling's CURRENT version —
+    // which, in the run that publishes it, exists nowhere but this tree. Pinning
+    // it as an override sends pnpm to npm for a version this very job is the
+    // precondition of, and every cut of a repo with an intra-repo peer fails at
+    // install (to@0.8.1, 2026-09-18: to-supabase → to-postgres@0.8.1, to-cloudflare-r2
+    // → to-aws-s3@0.8.1, publish skipped). Left unpinned, the devDependency's
+    // `workspace:*` link IS that version, so the floor is compiled against
+    // exactly what the range admits. The floor stays in `floors` and the key,
+    // so the report still says what was checked; only the override is dropped.
+    const pins = Object.fromEntries(Object.entries(floors).filter(([n, v]) => localVersions[n] !== v))
+    if (!byKey.has(key)) byKey.set(key, { key, floors, pins, packages: [] })
     byKey.get(key).packages.push({ name: pj.name, dir, peers: pj.peerDependencies ?? {} })
   }
 
@@ -268,7 +279,7 @@ export function runPeerFloor(root, cfg, { dryRun = false, log = () => {} } = {})
   try {
     for (const g of groups) {
       log(`── installing ${g.key} …`)
-      writeFileSync(rootPath, pinnedRootText(rootOriginal, g.floors, cfg.manager))
+      writeFileSync(rootPath, pinnedRootText(rootOriginal, g.pins, cfg.manager))
 
       try {
         run(cmd.install)
