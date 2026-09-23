@@ -60,7 +60,10 @@ export function runCodemodRows(root, cfg) {
   )
 
   const failures = []
+  let mapCount = 0
+  let checkedRows = 0
   for (const file of readdirSync(codemodDir).filter((f) => f.endsWith('.json'))) {
+    mapCount++
     const map = JSON.parse(readFileSync(join(codemodDir, file), 'utf8'))
     for (const row of map.renames ?? []) {
       const dir = localPackages.get(row.package)
@@ -69,6 +72,10 @@ export function runCodemodRows(root, cfg) {
       // on a class — neither is an export, so an export-surface assertion would
       // call them wrong. Only identifier/type rows are answerable this way.
       if (row.kind !== 'identifier' && row.kind !== 'type') continue
+      // ⚠️ AFTER both `continue`s on purpose: this counts rows CHECKED, not rows
+      // READ. Counting at the top of the loop would just restate each map's size
+      // and would look healthy on a repo that checked none of them.
+      checkedRows++
 
       let source = ''
       walkTs(join(dir, 'src'), (_p, code) => {
@@ -100,5 +107,10 @@ export function runCodemodRows(root, cfg) {
     }
   }
 
-  return { failures, status: 'ok' }
+  // ⭐ Rows, not packages, and this gate gets NO empty-walk refusal: three of
+  // four hub maps name no package in a given repo by design, so an empty scope
+  // is its normal state. The honest signal is the number — before this line
+  // "✓ Codemod rows OK" printed identically for `at`'s 10 rows and for 0
+  // (noy-db/.github#23's follow-up, measured 2026-09-17).
+  return { failures, status: 'ok', scope: `${checkedRows} row(s) checked across ${mapCount} codemod map(s)` }
 }

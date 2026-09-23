@@ -52,3 +52,15 @@ test('workspace: an unresolvable hub is `no-hub`, not a violation', (t) => {
   assert.equal(status, 'no-hub')
   assert.deepEqual(failures, [])
 })
+
+// ── noy-db/.github#23 ────────────────────────────────────────────────────────
+// ⛔ Deliberately NOT an empty-walk refusal. Measured on `at` against hub@0.8.0:
+// 88/0, 27/0, 31/10, 21/0 rows naming an at-* package — three of four maps
+// legitimately contribute nothing, so a refusal here would fail a correct repo.
+// The honest signal is the NUMBER.
+test('the green names how many rows were actually checked, so 10 and 0 do not print alike', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const res = runCodemodRows(root, loadConfig(root))
+  assert.equal(res.status, 'ok')
+  assert.match(res.scope, /row\(s\) checked/)
+})
