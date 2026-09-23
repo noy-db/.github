@@ -13,7 +13,7 @@
 // repo that says nothing gets the open tier, never a silent pass.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { packageDirs, readPkg } from '../walk.mjs'
+import { packageDirs, readPkg, emptyWalk, scopeOf } from '../walk.mjs'
 
 const SHIPPED = ['LICENSE', 'NOTICE']
 
@@ -59,7 +59,15 @@ export function runCheckLicense(root, cfg) {
   const tier = cfg.license ?? 'Apache-2.0'
   const rel = (dir) => dir.slice(root.length + 1) || '.'
 
-  const pkgs = packageDirs(root, cfg.layout)
+  const dirs = packageDirs(root, cfg.layout)
+  // ⛔ Before any assertion: zero packages is "could not run", never "clean".
+  // ⚠️ Measured on `dirs`, NOT on the filtered `pkgs` below — a repo whose every
+  // package is `private: true` has a legitimately empty `pkgs` and a non-empty
+  // walk. Failing that would be a false positive, and `lobby` is closest to it.
+  const cannotRun = emptyWalk(dirs, cfg)
+  if (cannotRun) return { failures: [], status: 'cannot-run', cannotRun }
+
+  const pkgs = dirs
     .map((dir) => ({ dir, json: readPkg(dir) }))
     .filter(({ json }) => cfg.layout === 'single' || !json.private)
 
@@ -87,5 +95,5 @@ export function runCheckLicense(root, cfg) {
       }
     }
   }
-  return { failures }
+  return { failures, scope: scopeOf(pkgs.length, cfg, 'publishable package(s)') }
 }
