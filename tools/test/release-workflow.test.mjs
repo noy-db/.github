@@ -7,6 +7,12 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { TOOLS } from './helpers.mjs'
 
+// ⚠️ The ref in these patterns is `@v\d+`, never a literal tag. These tests
+// assert the SHAPE — which workflow a caller fires, and that every family-tools
+// job starts with setup-family rather than a bare checkout. Pinning the tag here
+// too would make them fail at every cut, and it would be a SECOND checker of a
+// claim internal-refs.test.mjs already owns (that all self-references agree).
+
 const REPO = join(TOOLS, '..')
 const release = () => readFileSync(join(REPO, '.github/workflows/release.yml'), 'utf8')
 const caller = () => readFileSync(join(REPO, 'templates/release-caller.yml'), 'utf8')
@@ -41,7 +47,7 @@ test('the caller template fires only on a published GitHub Release', () => {
   const c = caller()
   assert.match(c, /^on:\n  release:\n    types: \[published\]\n/m)
   assert.doesNotMatch(c, /^\s+(push|tags|workflow_dispatch):/m)
-  assert.match(c, /uses: noy-db\/\.github\/\.github\/workflows\/release\.yml@v1/)
+  assert.match(c, /uses: noy-db\/\.github\/\.github\/workflows\/release\.yml@v\d+/)
   assert.match(c, /NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/)
 })
 
@@ -61,7 +67,7 @@ test('every job that reads family-tools starts with setup-family, never a bare c
   // refuses (publicRelease: false) has no tools to read.
   const readers = jobs.filter((job) => /cli\.mjs|family-config/.test(job))
   assert.ok(readers.length >= 3, 'config, verify and publish all read family-tools')
-  for (const job of readers) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v1/)
+  for (const job of readers) assert.match(job, /steps:\n(\s+#.*\n)*\s+- uses: noy-db\/\.github\/actions\/setup-family@v\d+/)
 })
 
 test('both the reusable workflow and the caller grant actions: read — verify reads the snapshot run through the API', () => {

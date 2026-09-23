@@ -32,12 +32,12 @@ jobs:
       manager: ${{ steps.cfg.outputs.manager }}
       publishes: ${{ steps.cfg.outputs.publishes }}
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           node-version: ${{ inputs.node-version }}
           install: 'false'
       - id: cfg
-        uses: noy-db/.github/actions/family-config@v1
+        uses: noy-db/.github/actions/family-config@v2
 
   # A repo that declares `publishes: false` (noy-db-docs, doi-db) is not a
   # failure case — it says so in its config and this run is a green no-op.
@@ -60,7 +60,7 @@ jobs:
       LAYOUT: ${{ needs.config.outputs.layout }}
       REGISTRY: https://npm.pkg.github.com
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
