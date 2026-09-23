@@ -107,9 +107,25 @@ export function runCodemodRows(root, cfg) {
     }
   }
 
-  // ⭐ Rows, not packages, and this gate gets NO empty-walk refusal: three of
-  // four hub maps name no package in a given repo by design, so an empty scope
-  // is its normal state. The honest signal is the number — before this line
+  // ⭐ Rows, not packages, and this gate gets NO empty-walk refusal.
+  //
+  // ⛔ The reason is NOT "the maps are usually empty for a repo" — that is false
+  // for the producer. Measured against core's 22 packages, ALL FOUR maps name a
+  // core package (2026-09-23):
+  //
+  //     0.4.0-pre   88 rows   10 name a core pkg    7 checkable
+  //     0.6.0-pre   27 rows   27 name a core pkg   25 checkable
+  //     0.7.0-pre   31 rows   12 name a core pkg   10 checkable
+  //     0.8.0-pre   21 rows   21 name a core pkg    0 checkable   ← the case
+  //
+  // The real reason is that `checkedRows === 0` is reachable TWO structurally
+  // different ways and a refusal cannot tell them apart: no row named me
+  // (another repo answers), versus rows named me and none was answerable this
+  // way (`option-key`/`method` rows, filtered by `kind` two lines above). The
+  // 0.8.0-pre row is the second case with a name on it. That argument survives
+  // when the maps are NOT empty, which is why it replaced the counting one.
+  //
+  // So the honest signal is the number, not a refusal — before this line
   // "✓ Codemod rows OK" printed identically for `at`'s 10 rows and for 0
   // (noy-db/.github#23's follow-up, measured 2026-09-17).
   return { failures, status: 'ok', scope: `${checkedRows} row(s) checked across ${mapCount} codemod map(s)` }

@@ -54,10 +54,12 @@ test('workspace: an unresolvable hub is `no-hub`, not a violation', (t) => {
 })
 
 // ── noy-db/.github#23 ────────────────────────────────────────────────────────
-// ⛔ Deliberately NOT an empty-walk refusal. Measured on `at` against hub@0.8.0:
-// 88/0, 27/0, 31/10, 21/0 rows naming an at-* package — three of four maps
-// legitimately contribute nothing, so a refusal here would fail a correct repo.
-// The honest signal is the NUMBER.
+// ⛔ Deliberately NOT an empty-walk refusal — and NOT because the maps are
+// usually empty (measured false for core: all four maps name a core package).
+// Because `checkedRows === 0` is reachable two ways a refusal cannot separate:
+// no row named this repo, versus rows named it and none was answerable by an
+// export assertion. core's 0.8.0-pre map is the second case: 21 rows name core,
+// 0 checkable. The honest signal is the NUMBER.
 test('the green names how many rows were actually checked, so 10 and 0 do not print alike', (t) => {
   const root = copyFixture(t, 'workspace')
   const res = runCodemodRows(root, loadConfig(root))
