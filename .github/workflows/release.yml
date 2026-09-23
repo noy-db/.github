@@ -43,12 +43,12 @@ jobs:
       # be on disk first — setup-family checks out and fetches them; a bare
       # actions/checkout does not. Measured: core's first release run
       # (34245176242) failed here with "Cannot find module .family-tools/tools/cli.mjs".
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           node-version: ${{ inputs.node-version }}
           install: 'false'
       - id: cfg
-        uses: noy-db/.github/actions/family-config@v1
+        uses: noy-db/.github/actions/family-config@v2
 
   # A repo whose family.config.json says publicRelease: false (the premium tier)
   # must never reach public npm through this workflow, whatever a stray Release
@@ -69,7 +69,7 @@ jobs:
     if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
@@ -161,7 +161,7 @@ jobs:
     if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
@@ -191,7 +191,7 @@ jobs:
       MANAGER: ${{ needs.config.outputs.manager }}
       LAYOUT: ${{ needs.config.outputs.layout }}
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}

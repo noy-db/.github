@@ -49,19 +49,19 @@ jobs:
       gates: ${{ steps.cfg.outputs.gates }}
       localChecks: ${{ steps.cfg.outputs.localChecks }}
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           node-version: ${{ inputs.node-version }}
           install: 'false'
       - id: cfg
-        uses: noy-db/.github/actions/family-config@v1
+        uses: noy-db/.github/actions/family-config@v2
 
   build:
     name: build
     needs: config
     runs-on: ubuntu-latest
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
@@ -79,7 +79,7 @@ jobs:
       matrix:
         node: ${{ fromJSON(inputs.node-matrix) }}
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ matrix.node }}
@@ -100,7 +100,7 @@ jobs:
       matrix:
         gate: ${{ fromJSON(needs.config.outputs.gates) }}
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
@@ -117,7 +117,7 @@ jobs:
     if: needs.config.outputs.localChecks != '[]'
     runs-on: ubuntu-latest
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
@@ -142,7 +142,7 @@ jobs:
     needs: [config, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: noy-db/.github/actions/setup-family@v1
+      - uses: noy-db/.github/actions/setup-family@v2
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
