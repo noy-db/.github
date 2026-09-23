@@ -30,7 +30,7 @@
 // can assert on them. cli.mjs owns the exit code.
 import { join, relative, basename } from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { packageDirs, readPkg, walkTs, HUB_IMPORT_RE } from '../walk.mjs'
+import { packageDirs, readPkg, walkTs, HUB_IMPORT_RE, emptyWalk, scopeOf } from '../walk.mjs'
 
 const BANNED = new Set(['crypto-js', 'node-forge', 'tweetnacl', 'bcryptjs', 'bcrypt'])
 
@@ -83,6 +83,9 @@ export function runArchitecture(root, cfg) {
   const failures = []
   const fail = (rule, msg, where) => failures.push({ rule, msg, where: where ? relative(root, where) : '' })
   const dirs = packageDirs(root, cfg.layout).filter((d) => !cfg.exempt.includes(basename(d)))
+  // ⛔ noy-db/.github#23: zero packages is "could not run", never "clean".
+  const cannotRun = emptyWalk(dirs, cfg)
+  if (cannotRun) return { failures: [], status: 'cannot-run', cannotRun }
   const seam = cfg.binds ? SEAM[cfg.binds] : null
   const importsHub = (dir) => {
     let f = false
@@ -170,5 +173,5 @@ export function runArchitecture(root, cfg) {
         fail('as-conformance-fixture', `${basename(dir)} has no test invoking ${cfg.conformanceKit}. Write the fixture; do not delete it (noy-db #1209).`, dir)
     }
   }
-  return { failures }
+  return { failures, scope: scopeOf(dirs.length, cfg) }
 }

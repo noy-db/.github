@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { rmSync } from 'node:fs'
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig } from '../src/config.mjs'
@@ -45,4 +46,20 @@ test('workspace: a subpath import resolves to its bare package name', (t) => {
   const failures = gate(root)
   assert.equal(failures.length, 1)
   assert.match(failures[0], /uses "@scope\/pkg"/)
+})
+
+// ── noy-db/.github#23 ─────────────────────────────────────────────────────────
+test('a tree whose package walk finds NOTHING is cannot-run, not clean', (t) => {
+  const root = copyFixture(t, 'workspace')
+  rmSync(join(root, 'packages'), { recursive: true, force: true })
+  const res = runDeclaredDeps(root, loadConfig(root))
+  assert.equal(res.status, 'cannot-run')
+  assert.match(res.cannotRun, /ZERO/)
+  assert.deepEqual(res.failures, [])
+})
+
+test('a green names the scope it checked', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const res = runDeclaredDeps(root, loadConfig(root))
+  assert.match(res.scope, /package\(s\)/)
 })

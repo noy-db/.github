@@ -21,7 +21,7 @@
 // for. Do not "simplify" it into a comparison against a constant.
 import { join } from 'node:path'
 import semver from 'semver'
-import { packageDirs, readPkg } from '../walk.mjs'
+import { packageDirs, readPkg, emptyWalk, scopeOf } from '../walk.mjs'
 
 const FIELDS = ['dependencies', 'peerDependencies', 'devDependencies', 'optionalDependencies']
 
@@ -32,7 +32,12 @@ export function runVersionsUniform(root, cfg) {
   // version is free to disagree. A `single` repo's root is often private and IS
   // the deliverable, so there it is never skipped — mirroring the architecture
   // gate, which made the same cut for the same reason.
-  const pkgs = packageDirs(root, cfg.layout)
+  const dirs = packageDirs(root, cfg.layout)
+  // ⛔ noy-db/.github#23: zero packages is "could not run", never "clean".
+  const cannotRun = emptyWalk(dirs, cfg)
+  if (cannotRun) return { failures: [], status: 'cannot-run', cannotRun }
+
+  const pkgs = dirs
     .map((dir) => ({ dir, json: readPkg(dir) }))
     .filter(({ json }) => cfg.layout === 'single' || !json.private)
 
@@ -100,5 +105,5 @@ export function runVersionsUniform(root, cfg) {
     }
   }
 
-  return { failures }
+  return { failures, scope: scopeOf(dirs.length, cfg) }
 }
