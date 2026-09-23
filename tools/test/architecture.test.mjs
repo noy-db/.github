@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { copyFixture } from './helpers.mjs'
+import { rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from '../src/config.mjs'
@@ -117,4 +119,20 @@ test('single-to-root: without allowHubRoot the root import is a to-only failure'
   const { rules, wheres } = gate('single-to-root', { allowHubRoot: false })
   assert.deepEqual(rules, ['to-only'])
   assert.deepEqual(wheres, ['dispatch.ts'])
+})
+
+// ── noy-db/.github#23 ─────────────────────────────────────────────────────────
+test('a tree whose package walk finds NOTHING is cannot-run, not clean', (t) => {
+  const root = copyFixture(t, 'workspace')
+  rmSync(join(root, 'packages'), { recursive: true, force: true })
+  const res = runArchitecture(root, loadConfig(root))
+  assert.equal(res.status, 'cannot-run')
+  assert.match(res.cannotRun, /ZERO/)
+  assert.deepEqual(res.failures, [])
+})
+
+test('a green names the scope it checked', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const res = runArchitecture(root, loadConfig(root))
+  assert.match(res.scope, /package\(s\)/)
 })

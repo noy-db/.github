@@ -122,3 +122,19 @@ test('verify runs the per-package changelog census (not a repo-wide grep)', () =
   assert.match(verify, /cli\.mjs changelog-census --root \./)
   assert.doesNotMatch(verify, /grep -rqE "\^## /, 'the existential grep must be gone')
 })
+
+// ── noy-db/.github#26 ────────────────────────────────────────────────────────
+// Measured on noy-db/core 0.9.0-pre.0, run 35680634078: changesets refuses a
+// custom tag in pre mode, so `changeset publish --tag next` failed AFTER config,
+// peer-floor, verify and a human approving the `release` environment. 0 of 22
+// published. The condition was readable from the checked-out tree all along.
+test('verify refuses a pre-mode tree BEFORE the release environment gate is spent', () => {
+  const yml = release()
+  const verify = yml.slice(yml.indexOf('\n  verify:'), yml.indexOf('\n  peer-floor:'))
+  assert.match(verify, /\.changeset\/pre\.json/)
+  assert.match(verify, /changeset pre exit/)
+})
+
+test('the pre-mode fix does NOT drop --tag next, which would route the publish to @latest', () => {
+  assert.match(release(), /changeset publish --tag next --no-git-tag/)
+})

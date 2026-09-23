@@ -86,6 +86,34 @@ jobs:
             exit 1
           fi
 
+      # ⛔ ORDERING IS THE POINT. changesets refuses a custom tag whenever
+      # preState.mode === "pre" (@changesets/cli 2.30.0, changesets-cli.cjs.js:1079),
+      # and the publish step below passes `--tag next`. Before this check, that
+      # failure landed AFTER config, peer-floor, verify and a human approving the
+      # `release` environment — spending the approval that exists to put a person
+      # in front of the npm write, on a condition readable from the checked-out
+      # tree. Measured: noy-db/core 0.9.0-pre.0, run 35680634078, 0 of 22 published.
+      #
+      # ⚠️ Why this is NEW rather than long-broken: core began tracking
+      # `.changeset/` on 2026-09-14 (a `changeset version` run had destroyed 8
+      # pending changesets), which made pre.json visible to CI for the first time.
+      # That fix was right, and it silently broke every rail pre-release from a
+      # repo using pre mode.
+      #
+      # ⛔ Do NOT "fix" the underlying refusal by dropping `--tag next` from the
+      # publish step — omitting it routes the publish to @latest, the failure
+      # NPM-MECHANICS.md records as already having happened family-wide.
+      - name: The tree is not in changesets pre mode
+        run: |
+          set -euo pipefail
+          if [ -f .changeset/pre.json ]; then
+            mode=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(".changeset/pre.json","utf8")).mode ?? "")')
+            if [ "$mode" = "pre" ]; then
+              echo "::error::.changeset/pre.json says mode=pre, and this rail publishes with --tag next, which changesets refuses in pre mode. Run 'npx changeset pre exit', commit, and move the tag to that commit. The Release itself does not need recreating until the tree is fixed."
+              exit 1
+            fi
+          fi
+
       - name: The line is uniform, and its licence ships
         run: |
           node .family-tools/tools/cli.mjs versions-uniform --root .

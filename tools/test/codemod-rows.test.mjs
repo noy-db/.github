@@ -52,3 +52,17 @@ test('workspace: an unresolvable hub is `no-hub`, not a violation', (t) => {
   assert.equal(status, 'no-hub')
   assert.deepEqual(failures, [])
 })
+
+// ── noy-db/.github#23 ────────────────────────────────────────────────────────
+// ⛔ Deliberately NOT an empty-walk refusal — and NOT because the maps are
+// usually empty (measured false for core: all four maps name a core package).
+// Because `checkedRows === 0` is reachable two ways a refusal cannot separate:
+// no row named this repo, versus rows named it and none was answerable by an
+// export assertion. core's 0.8.0-pre map is the second case: 21 rows name core,
+// 0 checkable. The honest signal is the NUMBER.
+test('the green names how many rows were actually checked, so 10 and 0 do not print alike', (t) => {
+  const root = copyFixture(t, 'workspace')
+  const res = runCodemodRows(root, loadConfig(root))
+  assert.equal(res.status, 'ok')
+  assert.match(res.scope, /row\(s\) checked/)
+})

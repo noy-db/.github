@@ -20,7 +20,7 @@
 // that is this file.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { packageDirs, readPkg, walkTs } from '../walk.mjs'
+import { packageDirs, readPkg, walkTs, emptyWalk, scopeOf } from '../walk.mjs'
 
 // Provided by the workspace root by convention, not per package. This is the
 // one exemption, and it is deliberately tiny: a rule that over-fires teaches
@@ -43,7 +43,12 @@ const bare = (s) => (s.startsWith('@') ? s.split('/').slice(0, 2).join('/') : s.
 export function runDeclaredDeps(root, cfg) {
   const failures = []
 
-  for (const dir of packageDirs(root, cfg.layout)) {
+  const dirs = packageDirs(root, cfg.layout)
+  // ⛔ noy-db/.github#23: zero packages is "could not run", never "clean".
+  const cannotRun = emptyWalk(dirs, cfg)
+  if (cannotRun) return { failures: [], status: 'cannot-run', cannotRun }
+
+  for (const dir of dirs) {
     const pj = readPkg(dir)
     const declared = new Set(
       ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].flatMap((f) =>
@@ -91,5 +96,5 @@ export function runDeclaredDeps(root, cfg) {
         failures.push(`${pj.name}: uses "${name}" but does not declare it  (${relative(root, file)})`)
   }
 
-  return { failures }
+  return { failures, scope: scopeOf(dirs.length, cfg) }
 }

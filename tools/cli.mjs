@@ -84,13 +84,16 @@ const usage = () =>
   `    gives you head's status, not the gate's. Redirect to a file and read the\n` +
   `    final summary line, or check \${PIPESTATUS[0]}.`
 
-function report(label, failures) {
+function report(label, failures, scope) {
   for (const f of failures) console.error(`✗ ${line(f)}`)
   if (failures.length > 0) {
     console.error(`\n✗ ${label} FAILED (${failures.length})`)
     return 1
   }
-  console.log(`✓ ${label} OK`)
+  // ⭐ A green STATES ITS SCOPE (noy-db/.github#23). Without this, a gate that
+  // checked 40 packages and one that checked 0 print the same tick — which is
+  // how four gates passed vacuously on an empty tree for their whole lives.
+  console.log(`✓ ${label} OK${scope ? ` — ${scope}` : ''}`)
   return 0
 }
 
@@ -188,7 +191,7 @@ async function main(argv) {
   // prose-examples uses them for blocks excluded as not-a-program, so the
   // exclusion cannot grow silently into a gate that checks nothing.
   for (const note of res.notes ?? []) console.log(`  ${note}`)
-  return report(entry.label, failures)
+  return report(entry.label, failures, res.scope)
 }
 
 // `main` is async because publish-census polls the registry. Awaiting it here

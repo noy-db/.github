@@ -123,3 +123,29 @@ test('foreignLicenceIds matches whole ids only — Apache-2.0 does not trip on "
   assert.deepEqual(foreignLicenceIds(['[MIT](./LICENSE)'], 'Apache-2.0'), ['MIT'])
   assert.deepEqual(foreignLicenceIds(['Apache-2.0'], 'FSL-1.1-Apache-2.0'), ['Apache-2.0'])
 })
+
+// ── noy-db/.github#23: a walk that finds nothing is not a clean repo ──────────
+// WHY: measured 2026-09-17 at v1=2d63800 against a tree with an empty
+// `packages/` — architecture, check-license, declared-deps and versions-uniform
+// all exited 0 with a tick. A renamed directory, a layout misdeclared in
+// family.config.json and a checkout at the wrong depth are indistinguishable
+// from a clean repo in that output.
+
+test('workspace: a tree whose package walk finds NOTHING is cannot-run, not clean', (t) => {
+  const root = copyFixture(t, 'workspace')
+  rmSync(join(root, 'packages'), { recursive: true, force: true })
+  const res = runCheckLicense(root, loadConfig(root))
+  assert.equal(res.status, 'cannot-run')
+  assert.match(res.cannotRun, /ZERO/)
+  assert.match(res.cannotRun, /packages\//)
+  assert.deepEqual(res.failures, [])
+})
+
+test('flat: a green names the scope it checked, so "0 packages, OK" is visible on its face', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  relicense(root, FLAT, 'Apache-2.0')
+  const res = runCheckLicense(root, loadConfig(root))
+  assert.deepEqual(res.failures, [])
+  assert.equal(res.status, undefined)
+  assert.match(res.scope, /3 publishable package\(s\)/)
+})
