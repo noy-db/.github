@@ -118,3 +118,29 @@ test('workspacePackages reports an unreadable manifest rather than an empty set'
   assert.ok(res.unparsed, 'must report unparsed, not return a silently short set')
   assert.equal(res.names, undefined)
 })
+
+// ⭐ docs-site's pnpm-workspace.yaml lists `showcases` and `registry` — literal
+// directories, not globs. Rejecting a star-free entry made that repo exit 2, and
+// a repo that cannot run a gate quietly stops being covered by it.
+test('a LITERAL workspace directory (no glob) contributes its package', (t) => {
+  const root = copyFixture(t, FIX)
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n  - "registry"\n')
+  const res = run(root)
+  // @noy-db/test-kit is no longer in the globs, so its changeset is now dead —
+  // which is the control that the set really is being recomputed.
+  assert.equal(res.failures.length, 1)
+  assert.match(res.failures[0], /@noy-db\/test-kit/)
+  assert.match(res.scope, /against 4 workspace package\(s\)/)
+})
+
+test('a literal directory that does not exist is skipped, not an error', (t) => {
+  const root = copyFixture(t, FIX)
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n  - "test-harnesses/*"\n  - "nope"\n')
+  assert.deepEqual(gate(root), [])
+})
+
+test('a star in the MIDDLE is still refused — the gate guesses nothing', (t) => {
+  const root = copyFixture(t, FIX)
+  writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "pack*ges/*"\n')
+  assert.equal(run(root).status, 'cannot-run')
+})
