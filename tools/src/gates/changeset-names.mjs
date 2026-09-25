@@ -78,12 +78,36 @@ export function workspacePackages(root, layout = 'single') {
 
   for (const g of globs) {
     if (g.startsWith('!')) continue // an exclusion only ever SHRINKS the set
+    // ⛔ Validate the WHOLE entry before splitting it. Checking only the last
+    // segment let "pack*ges/*" through: the directory part never matched, the
+    // loop contributed nothing, and the gate went on to call every changeset
+    // dead. That is the UNDER-COUNT direction — the one that invents failures —
+    // reached by a check that looked thorough.
+    const stars = (g.match(/\*/g) ?? []).length
+    const literal = stars === 0
+    // The only glob this gate reads is a single trailing "*" on the LAST segment:
+    // "dir/*", "prefix-*". Anything else (a "**", a star inside a directory
+    // name, a star not at the end) is refused rather than approximated.
+    if (!literal && !/^[^*]*\*$/.test(g.slice(g.lastIndexOf('/') + 1)))
+      return { unparsed: `workspace glob ${JSON.stringify(g)} is not "<dir>/*", "<prefix>*" or a literal directory — this gate does not guess` }
+    if (!literal && stars !== 1)
+      return { unparsed: `workspace glob ${JSON.stringify(g)} has more than one "*" — this gate does not guess` }
+
     const slash = g.lastIndexOf('/')
     const base = slash === -1 ? root : join(root, g.slice(0, slash))
     const leaf = slash === -1 ? g : g.slice(slash + 1)
-    // Two shapes, which is every shape this family uses: "dir/*" and "prefix-*".
-    if (!leaf.endsWith('*') || leaf.slice(0, -1).includes('*'))
-      return { unparsed: `workspace glob ${JSON.stringify(g)} is not "<dir>/*" or "<prefix>*" — this gate does not guess` }
+
+    // ⭐ A workspace entry need not be a glob at all. docs-site lists `showcases`
+    // and `registry` — literal directories, each ONE package. Treating a
+    // star-free entry as unreadable made that repo exit 2, and a repo that
+    // cannot run a gate quietly stops being covered by it, which is the vacuity
+    // trap this rail has already paid for once.
+    if (literal) {
+      const p = join(base, leaf)
+      if (existsSync(p) && statSync(p).isDirectory()) add(p)
+      continue
+    }
+
     const prefix = leaf.slice(0, -1)
     if (!existsSync(base)) continue
     for (const entry of readdirSync(base)) {
