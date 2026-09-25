@@ -15,6 +15,7 @@ import { runCodemodRows } from './src/gates/codemod-rows.mjs'
 import { runCheckLicense } from './src/gates/check-license.mjs'
 import { runPeerFloor } from './src/gates/peer-floor.mjs'
 import { runProseExamples } from './src/gates/prose-examples.mjs'
+import { runChangesetNames } from './src/gates/changeset-names.mjs'
 import { prepareSnapshot } from './src/snapshot/prepare.mjs'
 import { snapshotReport } from './src/snapshot/report.mjs'
 import { census, report as censusReport } from './src/release/census.mjs'
@@ -33,6 +34,7 @@ const GATES = {
   'codemod-rows': { label: 'Codemod rows', run: runCodemodRows },
   'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
   'prose-examples': { label: 'Shipped examples compile', run: runProseExamples },
+  'changeset-names': { label: 'Pending changesets name real packages', run: runChangesetNames },
 }
 
 const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census']
