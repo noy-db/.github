@@ -1,0 +1,6 @@
+{
+  "note": "a green pending-changeset set, including one bump row naming a PRIVATE package under test-harnesses/* — outside packages/, inside the workspace globs. That row is the false-positive control: a denominator built from packageDirs() would call it deleted and fail a correct tree.",
+  "gates": {
+    "changeset-names": 0
+  }
+}

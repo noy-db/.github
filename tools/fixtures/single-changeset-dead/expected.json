@@ -1,0 +1,6 @@
+{
+  "note": "the RED end-to-end case, and layout \"single\": one bump row names a package that no longer exists, so the gate must exit 1 through the CLI — not merely return failures from the module. A single-package repo has no workspace manifest, which is legitimate here and must NOT read as cannot-run.",
+  "gates": {
+    "changeset-names": 1
+  }
+}
