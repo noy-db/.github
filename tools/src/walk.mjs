@@ -53,9 +53,42 @@ export function walkTs(dir, cb) {
   }
 }
 
+/**
+ * Like {@link walkTs} but also visits `.vue`, for a scan whose subject is an
+ * IMPORT rather than TypeScript semantics.
+ *
+ * ⛔ WHY IT EXISTS. `walkTs` reads `.ts` only, and all four importers of the
+ * `@noy-db/in-devtools` seam are `.vue` files — so a package-seam rule built on
+ * `walkTs` would have missed the exact seam family#41 was filed about. This is
+ * the SAME blind spot `ui/CLAUDE.md` already records for its `seam.test.mjs`:
+ * "it covers `.vue` files, which the eslint flat config ignores." Two
+ * instruments, one blind spot, and the second one nearly re-earned it.
+ * ⚠️ Do NOT widen `walkTs` itself: its callers typecheck and read TS syntax, and
+ * a `.vue` SFC is not a TypeScript file.
+ */
+export function walkSources(dir, cb) {
+  if (!existsSync(dir)) return
+  for (const entry of readdirSync(dir)) {
+    if (entry === 'node_modules' || entry === 'dist') continue
+    const p = join(dir, entry)
+    if (statSync(p).isDirectory()) walkSources(p, cb)
+    else if ((entry.endsWith('.ts') && !entry.endsWith('.d.ts')) || entry.endsWith('.vue'))
+      cb(p, readFileSync(p, 'utf8'))
+  }
+}
+
 // Covers static imports (from/import), dynamic import(), require(), and bare
 // side-effect imports (`import '@noy-db/hub'`). Group 1 is the subpath, or
 // undefined for the root barrel.
 // ⚠️ It carries /g, so it is STATEFUL: reset `lastIndex` before a `.test()`, or
 // build a fresh RegExp from `.source` before an `exec` loop.
 export const HUB_IMPORT_RE = /(?:from|import|require)\s*\(?\s*['"]@noy-db\/hub(\/[^'"]*)?['"]/g
+
+/**
+ * Any `@noy-db/*` specifier, capturing the PACKAGE name (scope included) and
+ * dropping any subpath. Used for PACKAGE seams — a cross-repo dependency on a
+ * whole package rather than on one of hub's subpaths.
+ * ⚠️ Not a replacement for HUB_IMPORT_RE, which captures the SUBPATH because
+ * that is what hub's seams are cut on.
+ */
+export const NOYDB_IMPORT_RE = /(?:from|import|require)\s*\(?\s*['"]((@noy-db\/[^'"\/]+))(?:\/[^'"]*)?['"]/g

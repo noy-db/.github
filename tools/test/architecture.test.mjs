@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { copyFixture } from './helpers.mjs'
-import { rmSync } from 'node:fs'
+import { rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from '../src/config.mjs'
@@ -135,4 +135,110 @@ test('a green names the scope it checked', (t) => {
   const root = copyFixture(t, 'workspace')
   const res = runArchitecture(root, loadConfig(root))
   assert.match(res.scope, /package\(s\)/)
+})
+
+// ── package-seam (family#41) ─────────────────────────────────────────────────
+
+const seamCfg = (root, packageSeams) => ({ ...loadConfig(root), packageSeams })
+
+test('package-seam: an UNDECLARED cross-repo package import fails', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { meter } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  const failures = runArchitecture(root, seamCfg(root, {})).failures
+  const seam = failures.filter((x) => x.rule === 'package-seam')
+  assert.equal(seam.length, 1)
+  assert.match(seam[0].msg, /@noy-db\/to-meter/)
+  assert.match(seam[0].msg, /packageSeams/)
+})
+
+test('package-seam: declaring it makes the same import pass', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { meter } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  const failures = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'dependency' })).failures
+  assert.deepEqual(failures.filter((x) => x.rule === 'package-seam'), [])
+})
+
+test('package-seam: a TYPE-ONLY import is not a seam', (t) => {
+  // This file already paid for getting this wrong: its first version produced 35
+  // false failures on correct code, 14 of the 16 on `as` being `import type`.
+  // Measured again here — `in-nuxt`'s only `@noy-db/to-meter` reference is
+  // `import type { MeterSnapshot }`, so that package rightly owes no row.
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import type { MeterSnapshot } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  assert.deepEqual(runArchitecture(root, seamCfg(root, {})).failures.filter((x) => x.rule === 'package-seam'), [])
+})
+
+test('package-seam: an import inside a COMMENT is not a seam', (t) => {
+  // family#64 in a second instrument: declared-deps reported a dependency named
+  // `peer` from prose. A new specifier scan must not re-earn that bug.
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "// see import('@noy-db/to-meter') for the shape\n" + readFileSync(f, 'utf8'))
+  assert.deepEqual(runArchitecture(root, seamCfg(root, {})).failures.filter((x) => x.rule === 'package-seam'), [])
+})
+
+test('package-seam: a .vue importer is found — walkTs alone would miss it', (t) => {
+  // All four importers of the @noy-db/in-devtools seam are .vue files, so a rule
+  // built on walkTs would have missed the exact seam family#41 was filed about.
+  const root = copyFixture(t, 'flat-as')
+  mkdirSync(join(root, 'as-good/src/ui'), { recursive: true })
+  writeFileSync(join(root, 'as-good/src/ui/Panel.vue'),
+    "<script setup lang=\"ts\">\nimport { open } from '@noy-db/in-devtools'\n</script>\n<template><div /></template>\n")
+  const seam = runArchitecture(root, seamCfg(root, {})).failures.filter((x) => x.rule === 'package-seam')
+  assert.equal(seam.length, 1)
+  assert.match(seam[0].msg, /in-devtools/)
+  assert.match(seam[0].where, /Panel\.vue$/)
+})
+
+test('package-seam: a STALE declaration nothing imports fails', (t) => {
+  // A registry row nobody binds reads as a live obligation; that is how a row rots
+  // into a lie.
+  const root = copyFixture(t, 'flat-as')
+  const failures = runArchitecture(root, seamCfg(root, { '@noy-db/in-devtools': 'peer' })).failures
+  const seam = failures.filter((x) => x.rule === 'package-seam')
+  assert.equal(seam.length, 1)
+  assert.match(seam[0].msg, /no package here imports it/)
+})
+
+test('package-seam: optional-peer must actually be marked optional', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { x } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  const pj = join(root, 'as-good/package.json')
+  const j = JSON.parse(readFileSync(pj, 'utf8'))
+  j.peerDependencies = { ...j.peerDependencies, '@noy-db/to-meter': '^0.9.0' }
+  writeFileSync(pj, JSON.stringify(j, null, 2))
+  const failures = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'optional-peer' })).failures
+  assert.match(failures.find((x) => x.rule === 'package-seam').msg, /peerDependenciesMeta.*optional is not true/)
+})
+
+test('package-seam: an exact pin its own declared range does not admit fails', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { x } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  const pj = join(root, 'as-good/package.json')
+  const j = JSON.parse(readFileSync(pj, 'utf8'))
+  j.peerDependencies = { ...j.peerDependencies, '@noy-db/to-meter': '^0.8.0' }
+  j.devDependencies = { ...j.devDependencies, '@noy-db/to-meter': '0.9.0-pre.2' }
+  writeFileSync(pj, JSON.stringify(j, null, 2))
+  const failures = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'peer' })).failures
+  const seam = failures.find((x) => x.rule === 'package-seam' && /does not admit/.test(x.msg))
+  assert.ok(seam, 'a pin outside its own range is a partial bump waiting to happen')
+  assert.match(seam.msg, /0\.9\.0-pre\.2/)
+})
+
+test('package-seam: CONTROL — a pin its range DOES admit passes', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { x } from '@noy-db/to-meter'\n" + readFileSync(f, 'utf8'))
+  const pj = join(root, 'as-good/package.json')
+  const j = JSON.parse(readFileSync(pj, 'utf8'))
+  j.peerDependencies = { ...j.peerDependencies, '@noy-db/to-meter': '^0.8.0 || ^0.9.0-pre.1' }
+  j.devDependencies = { ...j.devDependencies, '@noy-db/to-meter': '0.9.0-pre.2' }
+  writeFileSync(pj, JSON.stringify(j, null, 2))
+  const failures = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'peer' })).failures
+  assert.deepEqual(failures.filter((x) => x.rule === 'package-seam'), [])
 })

@@ -30,7 +30,9 @@
 // can assert on them. cli.mjs owns the exit code.
 import { join, relative, basename } from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { packageDirs, readPkg, walkTs, HUB_IMPORT_RE, emptyWalk, scopeOf } from '../walk.mjs'
+import { packageDirs, readPkg, walkTs, walkSources, HUB_IMPORT_RE, NOYDB_IMPORT_RE, emptyWalk, scopeOf } from '../walk.mjs'
+import { stripComments } from './strip-comments.mjs'
+import semver from 'semver'
 
 const BANNED = new Set(['crypto-js', 'node-forge', 'tweetnacl', 'bcryptjs', 'bcrypt'])
 
@@ -173,5 +175,103 @@ export function runArchitecture(root, cfg) {
         fail('as-conformance-fixture', `${basename(dir)} has no test invoking ${cfg.conformanceKit}. Write the fixture; do not delete it (noy-db #1209).`, dir)
     }
   }
+  // ── package-seam ───────────────────────────────────────────────────────────
+  //
+  // A cross-repo dependency on a WHOLE PACKAGE, not on one of hub's subpaths.
+  // `@noy-db/in-devtools` is the case that forced this (family#41): `in-nuxt`
+  // takes it as a hard exact `dependency` and `lobby` as an optional peer, both
+  // repos' architecture checks saw only hub subpaths, so a change to its surface
+  // forced a version bump in two repos with NOTHING enforcing it.
+  //
+  // What is locally checkable, and therefore what this asserts:
+  //   1. no UNDECLARED package seam — a `@noy-db/*` import that is neither hub,
+  //      nor a sibling on this repo's own line, nor listed in `packageSeams`;
+  //   2. no STALE row — a declared seam nothing imports, which is how a registry
+  //      row rots into a lie;
+  //   3. the declared COUPLING KIND matches the manifest (dependency / peer /
+  //      optional-peer), because the kind is what decides a consumer's
+  //      resolution, and that is what earns a registry row at all;
+  //   4. where BOTH a peer range and an exact dev pin exist, the pin satisfies
+  //      the range — the half of "a surface change forces a bump on both sides"
+  //      that can be checked without asking the registry.
+  //
+  // ⛔ What it deliberately does NOT claim: that a surface change was noticed.
+  // Nothing local can know that. This keeps the registry TRUE and makes a new
+  // seam impossible to add silently, which is the enforcement the row was
+  // missing.
+  //
+  // ⚠️ Imports are read from COMMENT-STRIPPED source. `declared-deps` reported a
+  // dependency named `peer` from prose inside a comment (family#64); a second
+  // specifier scan must not re-earn that bug.
+  const seams = cfg.packageSeams ?? {}
+  const ownNames = new Set(dirs.map((d) => readPkg(d).name).filter(Boolean))
+  const KINDS = { dependency: 'dependencies', peer: 'peerDependencies', 'optional-peer': 'peerDependencies' }
+  const importedSeams = new Set()
+
+  for (const dir of dirs) {
+    const pj = readPkg(dir)
+    if (pj.private && cfg.layout !== 'single') continue
+
+    // ⚠️ TEST FILES ARE OUT OF SCOPE. A seam is a PUBLISHED coupling — it is what a
+    // consumer resolves — and a package imported only by a test is a
+    // devDependency, which `declared-deps` already covers. Including them would
+    // demand a registry row for every test helper, and a rule that over-fires
+    // teaches people to declare couplings they do not have.
+    const seen = new Set()
+    walkSources(join(dir, 'src'), (file, raw) => {
+      if (/\.(test|spec)\.[cm]?tsx?$/.test(file)) return
+      const code = stripComments(raw)
+      const re = new RegExp(NOYDB_IMPORT_RE.source, 'g')
+      let m
+      while ((m = re.exec(code)) !== null) {
+        const name = m[1]
+        if (name === '@noy-db/hub' || name === pj.name || ownNames.has(name)) continue
+        // ⛔ TYPES CROSS NO RUNTIME BOUNDARY, so a type-only import is not a seam
+        // — exactly as for the hub-subpath rules above. This file already paid for
+        // getting that wrong once: its first version produced 35 false failures on
+        // correct code and 14 of the 16 on `as` were `import type`. Measured here
+        // too: `in-nuxt`'s only `@noy-db/to-meter` reference is
+        // `import type { MeterSnapshot }`, which is why that package is a
+        // devDependency and rightly owes no registry row.
+        if (isTypeOnlyImport(code, m)) continue
+        if (!(name in seams)) {
+          // One finding per package+seam, not per import site: the obligation is
+          // the row, and ten call sites do not make ten obligations.
+          if (seen.has(name)) continue
+          seen.add(name)
+          fail(
+            'package-seam',
+            `${pj.name}: imports '${name}', a cross-repo PACKAGE seam with no declaration. Add it to family.config.json \`packageSeams\` and give it a row in the family seam registry.`,
+            file,
+          )
+          continue
+        }
+        importedSeams.add(name)
+      }
+    })
+
+    for (const [name, kind] of Object.entries(seams)) {
+      const block = KINDS[kind]
+      if (!block) {
+        fail('package-seam', `${pj.name}: packageSeams['${name}'] is "${kind}"; expected dependency, peer or optional-peer.`, dir)
+        continue
+      }
+      const declared = pj[block]?.[name]
+      if (declared === undefined) continue // this package need not bind every seam the repo declares
+      if (kind === 'optional-peer' && pj.peerDependenciesMeta?.[name]?.optional !== true)
+        fail('package-seam', `${pj.name}: '${name}' is declared optional-peer but peerDependenciesMeta['${name}'].optional is not true.`, dir)
+
+      // 4. a pin beside a range must satisfy it.
+      const range = pj.peerDependencies?.[name]
+      const pin = pj.devDependencies?.[name] ?? (kind === 'dependency' ? pj.dependencies?.[name] : undefined)
+      if (range && pin && semver.valid(pin) && semver.validRange(range) && !semver.satisfies(pin, range, { includePrerelease: true }))
+        fail('package-seam', `${pj.name}: pins '${name}' at ${pin}, which its own declared range "${range}" does not admit.`, dir)
+    }
+  }
+
+  for (const name of Object.keys(seams))
+    if (!importedSeams.has(name))
+      fail('package-seam', `packageSeams declares '${name}' but no package here imports it — a stale seam row reads as a live obligation.`, root)
+
   return { failures, scope: scopeOf(dirs.length, cfg) }
 }
