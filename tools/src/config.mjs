@@ -19,6 +19,7 @@ const LAYOUTS = PROPS.layout.enum
 const MANAGERS = PROPS.manager.enum
 const BINDS = PROPS.binds.enum
 const GATES = PROPS.gates.items.enum
+const SEAM_KINDS = PROPS.packageSeams.additionalProperties.enum
 const REQUIRED = SCHEMA.required
 const OPTIONAL = Object.keys(PROPS).filter((k) => !REQUIRED.includes(k))
 
@@ -64,6 +65,20 @@ function validate(cfg, label) {
     bad(`allowHubRoot is ${show(cfg.allowHubRoot)}; expected a boolean.`)
   if ('conformanceKit' in cfg && typeof cfg.conformanceKit !== 'string')
     bad(`conformanceKit is ${show(cfg.conformanceKit)}; expected a string.`)
+  if ('packageSeams' in cfg) {
+    const seams = cfg.packageSeams
+    if (seams === null || typeof seams !== 'object' || Array.isArray(seams))
+      bad(`packageSeams is ${show(seams)}; expected an object mapping a package name to a coupling kind.`)
+    else
+      for (const [name, kind] of Object.entries(seams)) {
+        if (!name.startsWith('@noy-db/'))
+          bad(`packageSeams key "${name}" is not an @noy-db package; a seam is a cross-repo coupling.`)
+        if (name === '@noy-db/hub')
+          bad(`packageSeams must not list @noy-db/hub — hub's seams are cut on SUBPATHS and are declared with \`binds\`.`)
+        if (!SEAM_KINDS.includes(kind))
+          bad(`packageSeams["${name}"] is ${show(kind)}; expected one of ${SEAM_KINDS.join(', ')}.`)
+      }
+  }
 
   return {
     ...cfg,
@@ -74,6 +89,7 @@ function validate(cfg, label) {
     // premium repo declares false, and that declaration lives in its tree.
     publicRelease: cfg.publicRelease ?? true,
     conformanceKit: cfg.conformanceKit ?? null,
+    packageSeams: cfg.packageSeams ?? {},
   }
 }
 

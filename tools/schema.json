@@ -96,8 +96,19 @@
       ]
     },
     "publicRelease": {
-      "description": "Whether this repo's artefacts may go to PUBLIC npm. Absent means true. A premium repo (lobby) says false: release.yml then refuses to run its verify/publish jobs. Independent of `publishes`, which says whether the repo cuts artefacts at all (lobby: true \u2014 its @dev snapshots).",
+      "description": "Whether this repo's artefacts may go to PUBLIC npm. Absent means true. A premium repo (lobby) says false: release.yml then refuses to run its verify/publish jobs. Independent of `publishes`, which says whether the repo cuts artefacts at all (lobby: true — its @dev snapshots).",
       "type": "boolean"
+    },
+    "packageSeams": {
+      "type": "object",
+      "description": "Cross-repo PACKAGE seams this repo binds — a dependency on a whole @noy-db package rather than on one of hub's subpaths. Maps the package name to its coupling KIND, which is what decides a consumer's resolution and therefore what earns a row in the family seam registry. The architecture gate refuses an undeclared seam, a declared seam nothing imports, a kind that disagrees with the manifest, and an exact pin its own declared range does not admit.",
+      "additionalProperties": {
+        "enum": [
+          "dependency",
+          "peer",
+          "optional-peer"
+        ]
+      }
     }
   }
 }
