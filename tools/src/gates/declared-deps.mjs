@@ -21,6 +21,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { packageDirs, readPkg, walkTs, emptyWalk, scopeOf } from '../walk.mjs'
+import { stripComments } from './strip-comments.mjs'
 
 // Provided by the workspace root by convention, not per package. This is the
 // one exemption, and it is deliberately tiny: a rule that over-fires teaches
@@ -56,11 +57,17 @@ export function runDeclaredDeps(root, cfg) {
       ),
     )
     const used = new Map() // specifier -> first file that used it
-    const sources = [] // [path, text]
+    const sources = [] // [path, comment-stripped text] — for specifier scans
+    const rawSources = [] // [path, original text] — for docblock pragmas, which ARE comments
 
     // walkTs skips .d.ts, which an import scan has no business reading anyway:
     // a declaration file's imports are types the build erases.
-    for (const sub of ['src', '__tests__']) walkTs(join(dir, sub), (p, code) => sources.push([p, code]))
+    // ⛔ COMMENTS ARE STRIPPED FIRST. `import("peer")` written inside a comment —
+    // in prose explaining import syntax — was reported as a dependency named
+    // `peer` for two of to's packages, and those false rows blocked enabling this
+    // gate on the family's largest publisher (family#64). String bodies are KEPT,
+    // because reading a specifier out of a quoted string is this gate's whole job.
+    for (const sub of ['src', '__tests__']) walkTs(join(dir, sub), (p, code) => { sources.push([p, stripComments(code)]); rawSources.push([p, code]) })
 
     for (const [file, code] of sources) {
       for (const re of [IMPORT, BARE_IMPORT, DYNAMIC, REQUIRE]) {
@@ -83,7 +90,12 @@ export function runDeclaredDeps(root, cfg) {
           .filter((n) => n.endsWith('.config.ts') || n.endsWith('.config.mts'))
           .map((n) => [join(dir, n), readFileSync(join(dir, n), 'utf8')])
       : []
-    for (const [file, code] of [...configs, ...sources]) {
+    // ⚠️ THIS LOOP READS THE ORIGINAL TEXT, NOT THE STRIPPED COPY. `@vitest-environment`
+    // is a docblock pragma — syntactically a comment — so stripping comments here
+    // would delete the exact signal this block exists to find, which is the form hub
+    // used and how that class stayed hidden in the first place. The two loops want
+    // opposite things from a comment, and that is why they are two loops.
+    for (const [file, code] of [...configs, ...rawSources]) {
       for (const re of [ENV_FIELD, ENV_PRAGMA]) {
         re.lastIndex = 0
         let m
