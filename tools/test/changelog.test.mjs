@@ -50,3 +50,64 @@ test('census: a flat repo with ONE root CHANGELOG.md covers every package that h
   writeFileSync(join(root, 'CHANGELOG.md'), '# as\n## 0.8.0\n\n## 0.7.0\n- old\n')
   assert.equal(runChangelogCensus(root, cfg, '0.8.0').failures.length, 3)
 })
+
+// ── family#66 ────────────────────────────────────────────────────────────────
+
+test('a Keep a Changelog section organised with ### subsections HAS content', () => {
+  // The old terminator was /^#{2,}\s/, so the first `### Added` ended the section
+  // and a 66-line entry reported "a heading with no notes". That refused
+  // noy-db/as and noy-db/at on 2026-09-26, both correct releases.
+  const md = [
+    '# Changelog', '', '## [1.0.0] — 2026-01-01', '', '### Added', '', '- a thing', '',
+    '### Fixed', '', '- another', '', '## [0.9.0]', '', '- old',
+  ].join('\n')
+  const section = versionSection(md, '1.0.0')
+  assert.ok(hasContent(section), 'the shape Keep a Changelog prescribes must pass')
+  assert.ok(section.some((l) => l.includes('- a thing')))
+  assert.ok(section.some((l) => l.includes('### Fixed')), 'subsections belong to the section')
+  assert.ok(!section.some((l) => l.includes('- old')), 'and it still stops at the next version')
+})
+
+test('CONTROL: a version heading immediately followed by the next one is still EMPTY', () => {
+  // Without this the depth fix could pass everything, which is the failure mode
+  // of a loosened terminator.
+  const md = ['## [1.0.0]', '', '## [0.9.0]', '', '- old'].join('\n')
+  assert.equal(hasContent(versionSection(md, '1.0.0')), false)
+})
+
+test('the section ends at the SAME depth, and a deeper heading does not end it', () => {
+  const md = ['### [1.0.0]', '', '#### Added', '', '- a thing', '', '### [0.9.0]', '', '- old'].join('\n')
+  const section = versionSection(md, '1.0.0')
+  assert.ok(section.some((l) => l.includes('- a thing')), 'h4 is inside an h3 version section')
+  assert.ok(!section.some((l) => l.includes('- old')), 'the next h3 ends it')
+})
+
+test('a shallower heading ends the section too', () => {
+  const md = ['## [1.0.0]', '', '- a thing', '', '# Appendix', '', '- not ours'].join('\n')
+  const section = versionSection(md, '1.0.0')
+  assert.ok(section.some((l) => l.includes('- a thing')))
+  assert.ok(!section.some((l) => l.includes('- not ours')))
+})
+
+test('a hash line inside a FENCE is shell, not a heading, and does not truncate', () => {
+  // Latent when found: hub's changelog already carries four fenced blocks, so this
+  // was one `# install deps` away from a section that "looks empty".
+  const md = [
+    '## [1.0.0]', '', '```bash', '# install deps', 'npm i', '```', '', '- real note', '',
+    '## [0.9.0]', '', '- old',
+  ].join('\n')
+  const section = versionSection(md, '1.0.0')
+  assert.ok(section.some((l) => l.includes('- real note')), 'the note after the fence survives')
+  assert.ok(section.some((l) => l.includes('# install deps')), 'and the fence body is kept verbatim')
+  assert.ok(!section.some((l) => l.includes('- old')))
+})
+
+test('a version heading inside a fence does not open a section', () => {
+  const md = ['# Changelog', '', '```md', '## [1.0.0]', '- documented example', '```', ''].join('\n')
+  assert.equal(versionSection(md, '1.0.0'), null, 'an example of a heading is not a heading')
+})
+
+test('~~~ fences are handled as well as backticks', () => {
+  const md = ['## [1.0.0]', '', '~~~sh', '# a comment', '~~~', '', '- note', '', '## [0.9.0]'].join('\n')
+  assert.ok(versionSection(md, '1.0.0').some((l) => l.includes('- note')))
+})
