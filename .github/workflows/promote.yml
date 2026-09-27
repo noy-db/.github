@@ -49,8 +49,21 @@ on:
 jobs:
   promote:
     runs-on: ubuntu-latest
-    # Same gate as publishing: this rewrites what every consumer gets on install.
-    environment: release
+    # ⭐ DELIBERATELY NOT BEHIND `environment: release`. The first version of this
+    # file WAS, by analogy with publishing, and the analogy fails on the property
+    # that matters: a publish CREATES an immutable artefact and cannot be undone,
+    # while a dist-tag move points a label at a version the registry ALREADY
+    # carries. It is reversible by moving the label back, and the job refuses
+    # unless every package already has the version.
+    # ⚠️ It cost 6 approvals on the 0.9.0 cut for 6 runs that could not have done
+    # anything the census had not already proved. A gate that fires where it cannot
+    # prevent harm trains people to click through the ones that can.
+    # ⛔ DO NOT "RESTORE THIS FOR CONSISTENCY". The PUBLISH gate stays exactly where
+    # it is, and the asymmetry is the point: that one guards an irreversible act and
+    # no agent can clear it — GitHub refuses deployment approval from a CLI OAuth
+    # token, which is what makes it real rather than advisory.
+    # ⚠️ What still protects this job: the census refusal above, and the fact that
+    # `npm dist-tag` needs the org NPM_TOKEN, which only Actions holds.
     steps:
       - name: Resolve the tag
         id: ref
