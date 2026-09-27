@@ -79,6 +79,17 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+          # ⛔ REQUIRED, and this workflow's first real run proved it by failing:
+          # setup-node@v5 caches the package manager by DEFAULT, and to do that it
+          # runs `pnpm store path` — before corepack has activated pnpm — against a
+          # caller whose package.json names pnpm. "Unable to locate executable file:
+          # pnpm", every step after it skipped.
+          # ⚠️ actions/setup-family already carried this line and this comment. It
+          # was not read while writing this file, which is the one way a
+          # counter-argument written next to the code still fails.
+          # This job needs no pnpm at all: npm runs the dist-tag writes and installs
+          # the tools.
+          package-manager-cache: false
 
       - name: Install family-tools
         working-directory: .family-tools/tools
