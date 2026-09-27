@@ -2,7 +2,7 @@
 #
 #   jobs:
 #     ci:
-#       uses: noy-db/.github/.github/workflows/ci.yml@v1
+#       uses: noy-db/.github/.github/workflows/ci.yml@v2
 #       secrets: inherit
 #
 # Everything this workflow runs is decided by the caller's family.config.json.

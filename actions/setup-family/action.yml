@@ -101,7 +101,12 @@ runs:
 
     - name: Cache the pnpm store
       if: inputs.manager == 'pnpm' && inputs.install != 'false'
-      uses: actions/cache@v4
+      # ⛔ node20 is deprecated on GitHub runners and v4 targets it, so every job
+      # using this action printed a forced-to-node24 warning. v5 is the node24
+      # move; v6 adds only a deps update and an ESM migration, so it is current
+      # without a cache-format change. MEASURED, not inferred: the `runs.using`
+      # field of each tag's own action.yml.
+      uses: actions/cache@v6
       with:
         path: ${{ steps.store.outputs.path }}
         key: pnpm-store-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/pnpm-lock.yaml') }}

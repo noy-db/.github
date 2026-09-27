@@ -68,7 +68,11 @@ jobs:
           [ -f "$d/index.html" ] || { echo "::error::no index.html under $d — did generate run?"; exit 1; }
           echo "dir=$d" >> "$GITHUB_OUTPUT"
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      # ⚠️ v4 targets node20 and **v5 STILL DOES** — measured from each tag's
+      # action.yml. So the obvious one-major bump looks like progress and fixes
+      # nothing; v6 is the node24 move. Its only breaking change IS that move, and
+      # this step passes just role-to-assume + aws-region, which are untouched.
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}

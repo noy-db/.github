@@ -27,7 +27,12 @@ jobs:
     name: prune
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      # v7 targets node20. ⭐ v9 rather than v8 on EVIDENCE, not caution: v8 exists
+      # only as a moving tag with no release notes, while v9 documents its breaking
+      # changes — `require('@actions/github')` failing, and `getOctokit` becoming an
+      # injected parameter. Checked against this script: it uses neither, only
+      # `github.rest.*`. An unreadable changelog is not the safer option.
+      - uses: actions/github-script@v9
         env:
           KEEP: ${{ inputs.keep }}
           DRY_RUN: ${{ inputs.dry-run }}
