@@ -1,0 +1,175 @@
+# Move a dist-tag onto an already-published version, for every publishable
+# package in the calling repo.
+#
+# ── Why this is a workflow and not a local script ────────────────────────────
+#
+# `_family/scripts/rail.mjs promote` did this from the root's machine and it is
+# still the right tool for reading the census. The WRITE half needs an npm
+# credential, and the root's local token expires — measured 2026-09-27, `E401` on
+# all 77 dist-tag writes of the 0.9.0 cut, after every read in the same run had
+# succeeded. The org `NPM_TOKEN` is the family's established write path and it
+# lives in Actions, so the write belongs here.
+#
+# ⭐ AND THE REPO CONTENTS COME FROM THE TAG WHILE THE LOGIC COMES FROM `@v2`.
+# That is the point of the `tag` input: a caller merged to `main` today can still
+# promote a tag cut before the caller existed, which a `workflow_dispatch --ref
+# <tag>` cannot do — the workflow file has to exist at the ref you dispatch.
+#
+# ⛔ A dist-tag move is NOT cosmetic. It decides what a bare `npm install` serves,
+# so it runs behind the same `release` environment gate as publishing, and it
+# verifies at the registry afterwards rather than trusting exit codes.
+name: promote
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The already-published version the dist-tag should point at.
+        required: true
+        type: string
+      tag:
+        description: >-
+          Git tag whose tree lists the packages to promote. Defaults to
+          v<version>. Read from the TAG because the working tree moves on after a
+          cut — a package deleted since publication still has a dist-tag.
+        required: false
+        type: string
+        default: ''
+      dist_tag:
+        description: Which dist-tag to move. `latest` unless you mean otherwise.
+        required: false
+        type: string
+        default: latest
+      dry_run:
+        description: Print what would move and write nothing.
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    # Same gate as publishing: this rewrites what every consumer gets on install.
+    environment: release
+    steps:
+      - name: Resolve the tag
+        id: ref
+        run: |
+          set -euo pipefail
+          TAG='${{ inputs.tag }}'
+          [ -n "$TAG" ] || TAG='v${{ inputs.version }}'
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "── promoting @${{ inputs.dist_tag }} → ${{ inputs.version }} from $TAG"
+
+      # The CALLER at the tag. The workflow body is still whatever `@v2` holds.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.ref.outputs.tag }}
+
+      # ⛔ v2, matching the hardcoded ref in actions/setup-family. A caller on one
+      # tag whose tools come from another is a green that examined the wrong code.
+      - name: Check out family-tools
+        uses: actions/checkout@v5
+        with:
+          repository: noy-db/.github
+          ref: v2
+          path: .family-tools
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install family-tools
+        working-directory: .family-tools/tools
+        run: npm install --omit=dev --no-audit --no-fund
+
+      # ⛔ Layout-aware, via the same walker every gate uses. A `git ls-tree
+      # packages/` loop finds NOTHING in the five flat repos and reports success
+      # over zero packages, which is how a promote could silently do nothing.
+      - name: List the publishable names at the tag
+        id: names
+        run: |
+          set -euo pipefail
+          node .family-tools/tools/cli.mjs names --root . > /tmp/names.txt
+          COUNT=$(grep -c . /tmp/names.txt || true)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "── $COUNT publishable name(s) at ${{ steps.ref.outputs.tag }}"
+          cat /tmp/names.txt
+          # Zero names is "could not read the repo", never "nothing to do".
+          [ "$COUNT" -gt 0 ] || { echo '::error::zero publishable names — refusing'; exit 1; }
+
+      # ⛔ THE CENSUS IS A GATE, NOT A PRINTOUT. A dist-tag pointing at a version
+      # the registry does not carry 404s every untagged install, and a PARTIAL move
+      # is worse than none: it splits the line across two versions under one tag,
+      # and the half that moved is the half consumers get.
+      - name: Refuse unless every name already carries ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          missing=0
+          while read -r P; do
+            [ -z "$P" ] && continue
+            enc=${P//\//%2f}
+            # Cache-busted, and read from `versions` in the ABBREVIATED packument —
+            # the document an install actually reads. An unpublish tombstone serves
+            # a 200 on the per-version URL while a resolver sees nothing.
+            have=$(curl -sS "https://registry.npmjs.org/${enc}?cb=$RANDOM$RANDOM" \
+                     -H 'accept: application/vnd.npm.install-v1+json' \
+                   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s);console.log(p.versions&&p.versions["${{ inputs.version }}"]?"yes":"no")}catch{console.log("unreadable")}})')
+            [ "$have" = yes ] || { echo "  ✗ $P does not carry ${{ inputs.version }} ($have)"; missing=$((missing+1)); }
+          done < /tmp/names.txt
+          [ "$missing" -eq 0 ] || { echo "::error::$missing of ${{ steps.names.outputs.count }} do not carry ${{ inputs.version }} — publish first"; exit 1; }
+          echo "── all ${{ steps.names.outputs.count }} carry ${{ inputs.version }}"
+
+      - name: Move @${{ inputs.dist_tag }}
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -uo pipefail
+          moved=0; already=0; failed=0
+          while read -r P; do
+            [ -z "$P" ] && continue
+            cur=$(npm view "$P" "dist-tags.${{ inputs.dist_tag }}" 2>/dev/null || echo '')
+            if [ "$cur" = '${{ inputs.version }}' ]; then already=$((already+1)); continue; fi
+            if npm dist-tag add "${P}@${{ inputs.version }}" '${{ inputs.dist_tag }}'; then
+              echo "  moved $P: ${cur:-none} → ${{ inputs.version }}"; moved=$((moved+1))
+            else
+              echo "  FAIL  $P"; failed=$((failed+1))
+            fi
+          done < /tmp/names.txt
+          echo "── moved $moved, already there $already, failed $failed"
+          echo "FAILED=$failed" >> "$GITHUB_ENV"
+
+      - name: Dry run — what would move
+        if: ${{ inputs.dry_run }}
+        run: |
+          set -uo pipefail
+          while read -r P; do
+            [ -z "$P" ] && continue
+            cur=$(npm view "$P" "dist-tags.${{ inputs.dist_tag }}" 2>/dev/null || echo 'none')
+            [ "$cur" = '${{ inputs.version }}' ] || echo "  would move $P: $cur → ${{ inputs.version }}"
+          done < /tmp/names.txt
+
+      # ⭐ A green write is not a moved tag. The family has been bitten twice by
+      # trusting a publisher's own success list, so the tag is read back per name.
+      - name: Verify AT THE REGISTRY
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -uo pipefail
+          check() {
+            ok=0; bad=''
+            while read -r P; do
+              [ -z "$P" ] && continue
+              enc=${P//\//%2f}
+              got=$(curl -sS "https://registry.npmjs.org/${enc}?cb=$RANDOM$RANDOM" \
+                      -H 'accept: application/vnd.npm.install-v1+json' \
+                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s)["dist-tags"]["${{ inputs.dist_tag }}"]||"none")}catch{console.log("unreadable")}})')
+              if [ "$got" = '${{ inputs.version }}' ]; then ok=$((ok+1)); else bad="$bad $P($got)"; fi
+            done < /tmp/names.txt
+            echo "── @${{ inputs.dist_tag }} = ${{ inputs.version }} at the registry: $ok / ${{ steps.names.outputs.count }}"
+            [ -n "$bad" ] && echo "   not confirmed:$bad"
+            [ "$ok" = '${{ steps.names.outputs.count }}' ]
+          }
+          # One retry: a dist-tag read can lag its own write by seconds.
+          check || { echo '   re-checking after propagation…'; sleep 30; check; }

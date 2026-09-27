@@ -37,7 +37,7 @@ const GATES = {
   'changeset-names': { label: 'Pending changesets name real packages', run: runChangesetNames },
 }
 
-const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census']
+const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census', 'names']
 
 function parseArgs(argv) {
   const opts = {
@@ -127,6 +127,20 @@ async function main(argv) {
 
   if (opts.gate === 'snapshot-prepare') {
     console.log(JSON.stringify(prepareSnapshot(root, cfg, { tag: opts.tag, registry: opts.registry }), null, 2))
+    return 0
+  }
+
+  // The publishable names of THIS tree, one per line, for a shell loop.
+  //
+  // ⭐ WHY THIS IS NOT A `git ls-tree` IN BASH: the family has two layouts —
+  // core/ui keep `packages/*`, the five flat repos keep `<prefix>-*` at the root —
+  // and a bash enumeration has to reimplement that, per workflow. `deprecate-pre.yml`
+  // in core does exactly that and reads `packages/` only, so the same loop in a flat
+  // repo would silently find NOTHING and report success over zero packages.
+  // ⛔ Zero names is therefore never printed as success by a caller: promote.yml
+  // asserts the count before it writes anything.
+  if (opts.gate === 'names') {
+    for (const n of snapshotReport(root, cfg, { names: true })) console.log(n)
     return 0
   }
 
