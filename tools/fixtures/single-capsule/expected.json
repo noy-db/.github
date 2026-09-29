@@ -1,0 +1,7 @@
+{
+  "note": "src/b.ts value-imports hub's root barrel, which a /capsule-binding repo may not (hub imports the capsule); /capsule passes, and a type-only root import does too.",
+  "gates": {
+    "architecture": 1,
+    "check-license": 1
+  }
+}
