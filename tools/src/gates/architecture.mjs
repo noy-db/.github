@@ -58,6 +58,11 @@ const SEAM = {
   '@noy-db/hub/at': { storeOnly: true, rule: 'no-runtime-store-import' },
   '@noy-db/hub/cargo': { allowed: new Set(['', '/cargo', '/pod', '/share-link']), rule: 'klum-only-seam' },
   '@noy-db/hub/introspection': { allowed: new Set(['/introspection']), rule: 'introspection-only' },
+  // A capsule is SWAPPED IN for hub's own enclave through hub's `#capsule`
+  // import map, so hub's root barrel imports IT. A capsule that imported the
+  // root barrel back would be a cycle, and any other subpath is surface a
+  // capsule has no business binding. noy-db-capsule, 2026-09-29.
+  '@noy-db/hub/capsule': { allowed: new Set(['/capsule']), rule: 'capsule-only' },
 }
 
 /**

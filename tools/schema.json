@@ -37,6 +37,7 @@
         "@noy-db/hub/at",
         "@noy-db/hub/cargo",
         "@noy-db/hub/introspection",
+        "@noy-db/hub/capsule",
         null
       ]
     },

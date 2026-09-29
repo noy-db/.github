@@ -72,6 +72,12 @@ test('single-cargo: /cargo and /pod pass, /to trips the seam rule once', () => {
   assert.deepEqual(wheres, ['b.ts'])
 })
 
+test('single-capsule: /capsule passes, a value import of the root barrel trips capsule-only once', () => {
+  const { rules, wheres } = gate('single-capsule')
+  assert.deepEqual(rules, ['capsule-only'])
+  assert.deepEqual(wheres, ['b.ts'])
+})
+
 test('one-way: a @noy-db package importing either lobby fails; the lobby itself does not', () => {
   const { rules, wheres } = gate('flat-one-way')
   assert.deepEqual(rules, ['one-way', 'one-way'])
