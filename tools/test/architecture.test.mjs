@@ -186,6 +186,25 @@ test('package-seam: an import inside a COMMENT is not a seam', (t) => {
   assert.deepEqual(runArchitecture(root, seamCfg(root, {})).failures.filter((x) => x.rule === 'package-seam'), [])
 })
 
+test('package-seam: a .tsx importer is found, and declaring it is not stale (family#104)', (t) => {
+  // in-devtools-tui's bin.tsx value-imports @noy-db/to-meter. Before isTsSource,
+  // the gate walked past .tsx, so the seam was invisible AND declaring it failed
+  // as stale. Both halves are asserted, because each was a separate symptom.
+  const root = copyFixture(t, 'flat-as')
+  writeFileSync(join(root, 'as-good/src/bin.tsx'), "import { toMeter } from '@noy-db/to-meter'\nexport const x = toMeter\n")
+  const undeclared = runArchitecture(root, seamCfg(root, {})).failures.filter((x) => x.rule === 'package-seam')
+  assert.equal(undeclared.length, 1)
+  assert.match(undeclared[0].msg, /@noy-db\/to-meter/)
+  const declared = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'dependency' })).failures.filter((x) => x.rule === 'package-seam')
+  assert.equal(declared.filter((x) => /stale/.test(x.msg)).length, 0)
+})
+
+test('isTsSource: TypeScript sources yes, declarations and SFCs no', async () => {
+  const { isTsSource } = await import('../src/walk.mjs')
+  for (const f of ['a.ts', 'a.tsx', 'a.mts', 'a.cts']) assert.equal(isTsSource(f), true, f)
+  for (const f of ['a.d.ts', 'a.d.mts', 'a.d.cts', 'a.vue', 'a.js', 'a.tsx.map']) assert.equal(isTsSource(f), false, f)
+})
+
 test('package-seam: a .vue importer is found — walkTs alone would miss it', (t) => {
   // All four importers of the @noy-db/in-devtools seam are .vue files, so a rule
   // built on walkTs would have missed the exact seam family#41 was filed about.
