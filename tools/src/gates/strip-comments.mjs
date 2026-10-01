@@ -29,6 +29,17 @@
 // which is worse than one that over-fires. A specifier hidden in prose is
 // excluded because prose is a comment, not because it is quoted.
 //
+// ⭐ EXCEPT a string whose body contains WHITESPACE (family#106, 2026-10-02). A
+// module specifier never contains whitespace, so such a string cannot be one —
+// but it can CONTAIN import syntax as text, and core had six of them: cli's
+// `config.ts` scaffolds a user's config file inside a template literal
+// (`import { awsDynamoStore } from '@noy-db/to-aws-dynamo'`), and a hub error
+// string tells the caller to pass `shamirRecoveryProvider() from
+// '@noy-db/on-shamir'`. The package-seam rule reported all six as undeclared
+// seams, and its remedy text ("add it to packageSeams and the family registry")
+// would have recorded six couplings that do not exist. Those bodies are blanked;
+// every whitespace-free string — every real specifier — is kept.
+//
 // Length, line count and every newline are preserved, so the `/gm` `^`-anchored
 // scanners still see the right line structure.
 //
@@ -42,10 +53,11 @@ const SQ = 3
 const DQ = 4
 const TPL = 5
 
-/** The source with comment spans replaced by spaces; code and strings untouched. */
+/** The source with comment spans, and string bodies that contain whitespace, replaced by spaces. */
 export function stripComments(src) {
   const out = Array.from(src)
   let state = CODE
+  let start = -1 // index of the first character of the current string body
   for (let i = 0; i < src.length; i++) {
     const c = src[i]
     const n = src[i + 1]
@@ -55,6 +67,7 @@ export function stripComments(src) {
       if (c === "'") state = SQ
       else if (c === '"') state = DQ
       else if (c === '`') state = TPL
+      if (state !== CODE) start = i + 1
       continue
     }
     if (state === LINE) {
@@ -69,7 +82,15 @@ export function stripComments(src) {
     }
     // inside a string — honour escapes so `'it\'s'` does not end early
     if (c === '\\') { i++; continue }
-    if ((state === SQ && c === "'") || (state === DQ && c === '"') || (state === TPL && c === '`')) state = CODE
+    // A '…' or "…" string cannot contain a raw newline in JS. Reaching one means
+    // the scan entered a string that is not there (a stray quote after a `*/`),
+    // so resynchronise at the line end rather than blank the next line.
+    if (c === '\n' && (state === SQ || state === DQ)) { state = CODE; continue }
+    if ((state === SQ && c === "'") || (state === DQ && c === '"') || (state === TPL && c === '`')) {
+      state = CODE
+      // A body with whitespace is prose or generated text, never a specifier.
+      if (/\s/.test(src.slice(start, i))) for (let k = start; k < i; k++) if (src[k] !== '\n') out[k] = ' '
+    }
   }
   return out.join('')
 }
