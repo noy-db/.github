@@ -44,13 +44,15 @@ test('an escaped quote does not end the string early', () => {
   const src = 'const s = "it\\" // not a comment"\nimport "real"\n'
   const out = stripComments(src)
   assert.ok(out.includes('import "real"'))
-  assert.ok(out.includes('not a comment'), 'still inside the string, so not stripped')
+  // The body has whitespace, so family#106 blanks it; what this test protects is
+  // that the escaped quote did not END the string and leak `//` into a comment.
+  assert.equal(out.split('\n')[0].length, src.split('\n')[0].length, 'the string line keeps its length')
 })
 
 test('template literals are treated as strings', () => {
   const out = stripComments('const t = `a // b`\nimport "real"\n')
-  assert.ok(out.includes('a // b'))
-  assert.ok(out.includes('import "real"'))
+  assert.ok(out.startsWith('const t = `'), 'the template opened as a string, not as code')
+  assert.ok(out.includes('import "real"'), 'its `//` was not a comment that ate the next line')
 })
 
 test('length, line count and newlines are preserved — the scanners are ^-anchored /gm', () => {
@@ -65,5 +67,26 @@ test('length, line count and newlines are preserved — the scanners are ^-ancho
 
 test('a file with no comments is returned unchanged', () => {
   const src = 'import a from "b"\nexport const c = 1\n'
+  assert.equal(stripComments(src), src)
+})
+
+test('family#106: import syntax inside a TEMPLATE that scaffolds a file is not an import', () => {
+  // cli's config.ts shape: generated file text, not this module's imports.
+  const src = "import { x } from '@noy-db/hub'\nconst t = `import { awsDynamoStore } from '@noy-db/to-aws-dynamo'\n// import { o } from '@noy-db/on-oidc'\n`\n"
+  const out = stripComments(src)
+  assert.ok(out.includes("from '@noy-db/hub'"), 'the real import survives')
+  assert.ok(!out.includes('to-aws-dynamo'), 'the scaffolded import is blanked')
+  assert.ok(!out.includes('on-oidc'), 'and the commented-out one inside the template')
+  assert.equal(out.length, src.length)
+  assert.equal(out.split('\n').length, src.split('\n').length, 'line structure kept')
+})
+
+test('family#106: a specifier quoted inside an error STRING is prose', () => {
+  const src = `throw new Error("pass shamirRecovery: shamirRecoveryProvider() from '@noy-db/on-shamir' to createNoydb()")\n`
+  assert.ok(!stripComments(src).includes('on-shamir'))
+})
+
+test('CONTROL family#106: every whitespace-free string survives — a real specifier is never blanked', () => {
+  const src = "import a from '@noy-db/a'\nexport * from \"@noy-db/b\"\nconst c = await import(`@noy-db/c`)\nconst d = require('@noy-db/d')\n"
   assert.equal(stripComments(src), src)
 })
