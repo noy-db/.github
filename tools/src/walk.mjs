@@ -43,13 +43,25 @@ export const scopeOf = (n, cfg, noun = 'package(s)') =>
 
 export const readPkg = (dir) => JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
 
+/**
+ * A TypeScript SOURCE file: `.ts` / `.tsx` / `.mts` / `.cts`, never a declaration
+ * (`.d.ts`, `.d.mts`, `.d.cts`).
+ *
+ * ⛔ `.tsx` WAS MISSING (family#104, 2026-09-29). `in-devtools-tui` is ink/React
+ * `.tsx`, and its `bin.tsx` value-imports `@noy-db/to-meter` — a cross-repo
+ * package seam that every gate here walked straight past, so declaring it read
+ * as STALE. A `.tsx` file IS TypeScript (unlike a `.vue` SFC), so it belongs in
+ * `walkTs`; the import regexes read its import lines exactly as they read `.ts`.
+ */
+export const isTsSource = (entry) => /\.(ts|tsx|mts|cts)$/.test(entry) && !/\.d\.(ts|mts|cts)$/.test(entry)
+
 export function walkTs(dir, cb) {
   if (!existsSync(dir)) return
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry === 'dist') continue
     const p = join(dir, entry)
     if (statSync(p).isDirectory()) walkTs(p, cb)
-    else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) cb(p, readFileSync(p, 'utf8'))
+    else if (isTsSource(entry)) cb(p, readFileSync(p, 'utf8'))
   }
 }
 
@@ -72,7 +84,7 @@ export function walkSources(dir, cb) {
     if (entry === 'node_modules' || entry === 'dist') continue
     const p = join(dir, entry)
     if (statSync(p).isDirectory()) walkSources(p, cb)
-    else if ((entry.endsWith('.ts') && !entry.endsWith('.d.ts')) || entry.endsWith('.vue'))
+    else if (isTsSource(entry) || entry.endsWith('.vue'))
       cb(p, readFileSync(p, 'utf8'))
   }
 }
