@@ -20,8 +20,8 @@ jobs:
       matrix:
         node: ['22', '24']
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: ${{ matrix.node }}
       # `npm install` first, always: the suite imports semver, and running
@@ -39,7 +39,7 @@ jobs:
     outputs:
       fixtures: ${{ steps.list.outputs.fixtures }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - id: list
         # A fixture opts into the gate matrix by carrying an expected.json; one
         # without it is exercised by the unit suite only.
@@ -58,8 +58,8 @@ jobs:
       matrix:
         fixture: ${{ fromJSON(needs.discover.outputs.fixtures) }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
       - name: Install family-tools
@@ -93,7 +93,7 @@ jobs:
     name: no publish, no soft gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Both patterns are written with a bracket class so this file does not
       # match its own greps. Writing them literally would make the check fail
       # on itself, and the obvious "fix" is to stop scanning this file — which
