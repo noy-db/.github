@@ -27,18 +27,30 @@ function toolsRef() {
 
 // Live refs only: a `#` comment showing a CALLER what to write is documentation,
 // not a resolution, and ci.yml's header carries one on purpose.
+//
+// README fenced blocks count as live (family#143): a new member copies the
+// README's caller verbatim, so a stale tag there ships the wrong code just as
+// silently as one in templates/. The README carried four `@v1` snippets for
+// three weeks after the v2 cut; nothing read them.
 function liveRefs() {
   const out = []
+  const scan = (where, text, live) => {
+    text.split('\n').forEach((line, i) => {
+      if (!live(line) || /^\s*#/.test(line)) return
+      const m = line.match(/noy-db\/\.github[^@\s]*@(v\d+)/)
+      if (m) out.push({ where: `${where}:${i + 1}`, ref: m[1] })
+    })
+  }
   for (const dir of ['.github/workflows', 'templates']) {
     for (const f of readdirSync(join(REPO, dir)).filter((n) => /\.ya?ml$/.test(n))) {
-      const text = readFileSync(join(REPO, dir, f), 'utf8')
-      text.split('\n').forEach((line, i) => {
-        if (/^\s*#/.test(line)) return
-        const m = line.match(/noy-db\/\.github[^@\s]*@(v\d+)/)
-        if (m) out.push({ where: `${dir}/${f}:${i + 1}`, ref: m[1] })
-      })
+      scan(`${dir}/${f}`, readFileSync(join(REPO, dir, f), 'utf8'), () => true)
     }
   }
+  let fenced = false
+  scan('README.md', readFileSync(join(REPO, 'README.md'), 'utf8'), (line) => {
+    if (/^```/.test(line)) fenced = !fenced
+    return fenced
+  })
   return out
 }
 
@@ -50,4 +62,17 @@ test('every live self-reference names the same tag as the tools checkout', () =>
   assert.ok(refs.length >= 15, `expected at least 15 live self-references, found ${refs.length} — the scan is broken, not the repo`)
   const wrong = refs.filter((r) => r.ref !== ref)
   assert.deepEqual(wrong, [], `these lag the tools checkout (${ref}): ${wrong.map((w) => `${w.where}=${w.ref}`).join(', ')}`)
+})
+
+// The README's caller snippets are the templates verbatim (family#143): a new
+// member copies the README, so a snippet that drifts from its template is a
+// second, unmeasured caller shape.
+test('every README caller snippet equals its template, minus the template header line', () => {
+  const readme = readFileSync(join(REPO, 'README.md'), 'utf8')
+  const fences = [...readme.matchAll(/^```yaml\n# \.github\/workflows\/([a-z-]+)\.yml[^\n]*\n([\s\S]*?)^```$/gm)]
+  assert.ok(fences.length >= 7, `expected the README to carry the caller snippets, found ${fences.length}`)
+  for (const [, name, body] of fences) {
+    const template = readFileSync(join(REPO, 'templates', `${name}-caller.yml`), 'utf8').split('\n').slice(1).join('\n')
+    assert.equal(body.trimEnd(), template.trimEnd(), `README snippet for ${name}.yml drifted from templates/${name}-caller.yml`)
+  }
 })

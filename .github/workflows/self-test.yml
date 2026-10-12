@@ -1,5 +1,6 @@
 # This repo's own CI. It cannot call the reusable workflows above — they check
-# out `noy-db/.github@v1`, which is the thing under test — so it tests the parts
+# out `noy-db/.github` at the tag `setup-family` hardcodes, which is the thing
+# under test — so it tests the parts
 # that can be tested in place: the tools' suite, the gates against the fixtures,
 # and the two properties this repo must never lose.
 name: Self test
