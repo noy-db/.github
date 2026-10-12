@@ -145,3 +145,35 @@ test('publicRelease: absent means true; a boolean is accepted; anything else is 
   writeFileSync(p, JSON.stringify({ ...base, publicRelease: 'private' }))
   assert.throws(() => loadConfig(root), /publicRelease is "private"; expected a boolean/)
 })
+
+// --- scripts: the ci.yml opt-out for test / lint / typecheck (family#142) ----
+
+test('scripts: absent means every one of test, lint and typecheck is required', () => {
+  assert.deepEqual(loadConfig(rootWith(VALID)).scripts, { test: true, lint: true, typecheck: true })
+})
+
+test('scripts: a declared false is kept and the undeclared rest stay required', () => {
+  assert.deepEqual(loadConfig(rootWith({ ...VALID, scripts: { lint: false } })).scripts, {
+    test: true,
+    lint: false,
+    typecheck: true,
+  })
+})
+
+test('scripts: a non-boolean, an unknown script and a non-object are each rejected naming scripts', () => {
+  assert.throws(() => loadConfig(rootWith({ ...VALID, scripts: { test: 'no' } })), /scripts\.test is "no"; expected a boolean/)
+  assert.throws(() => loadConfig(rootWith({ ...VALID, scripts: { build: false } })), /scripts\.build is not a script/)
+  assert.throws(() => loadConfig(rootWith({ ...VALID, scripts: ['test'] })), /scripts is \["test"\]/)
+})
+
+test('scripts: the schema and the loader name the same three scripts', () => {
+  assert.deepEqual(Object.keys(SCHEMA.properties.scripts.properties).sort(), ['lint', 'test', 'typecheck'])
+  assert.deepEqual(Object.keys(loadConfig(rootWith(VALID)).scripts).sort(), ['lint', 'test', 'typecheck'])
+})
+
+test('cli config --print emits scripts, which is what actions/family-config reads with jq', () => {
+  const dir = rootWith({ ...VALID, scripts: { typecheck: false } })
+  const r = spawnSync(process.execPath, [join(PKG, 'cli.mjs'), 'config', '--root', dir, '--print'], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(JSON.parse(r.stdout).scripts, { test: true, lint: true, typecheck: false })
+})

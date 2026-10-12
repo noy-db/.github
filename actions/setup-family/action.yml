@@ -38,7 +38,7 @@ runs:
   using: composite
   steps:
     - name: Check out the caller
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
     # ⛔ THE TAG IS HARDCODED, AND IT MUST EQUAL THE TAG BEING CUT. This line
     # decides which GATES run — a caller at `@v2` whose tools come from `v1`
@@ -51,7 +51,7 @@ runs:
     # A change to this repo is validated by moving its tag, never by pointing one
     # caller at a branch.
     - name: Check out family-tools
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       with:
         repository: noy-db/.github
         ref: v2
@@ -65,7 +65,7 @@ runs:
       run: echo '/.family-tools/' >> .git/info/exclude
 
     - name: Set up Node
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
       with:
         node-version: ${{ inputs.node-version }}
         # setup-node@v5 caches the package manager by default, and to do that it
@@ -107,7 +107,7 @@ runs:
       # move; v6 adds only a deps update and an ESM migration, so it is current
       # without a cache-format change. MEASURED, not inferred: the `runs.using`
       # field of each tag's own action.yml.
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ steps.store.outputs.path }}
         key: pnpm-store-${{ runner.os }}-node${{ inputs.node-version }}-${{ hashFiles('**/pnpm-lock.yaml') }}

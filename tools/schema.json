@@ -100,6 +100,25 @@
       "description": "Whether this repo's artefacts may go to PUBLIC npm. Absent means true. A premium repo (lobby) says false: release.yml then refuses to run its verify/publish jobs. Independent of `publishes`, which says whether the repo cuts artefacts at all (lobby: true — its @dev snapshots).",
       "type": "boolean"
     },
+    "scripts": {
+      "type": "object",
+      "description": "Opt-out for the three scripts ci.yml REQUIRES: test, lint and typecheck each run as `<manager> run <script>` with no --if-present, so a renamed or deleted script is a red build, never a silent green. A repo that genuinely has none of one declares it off here, in its own tree, where a reviewer can see it. Absent means all three are required.",
+      "additionalProperties": false,
+      "properties": {
+        "test": {
+          "type": "boolean",
+          "description": "false: ci.yml skips the test step."
+        },
+        "lint": {
+          "type": "boolean",
+          "description": "false: ci.yml skips the lint step."
+        },
+        "typecheck": {
+          "type": "boolean",
+          "description": "false: ci.yml skips the typecheck step."
+        }
+      }
+    },
     "packageSeams": {
       "type": "object",
       "description": "Cross-repo PACKAGE seams this repo binds — a dependency on a whole @noy-db package rather than on one of hub's subpaths. Maps the package name to its coupling KIND, which is what decides a consumer's resolution and therefore what earns a row in the family seam registry. The architecture gate refuses an undeclared seam, a declared seam nothing imports, a kind that disagrees with the manifest, and an exact pin its own declared range does not admit.",

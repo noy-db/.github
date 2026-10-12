@@ -48,6 +48,9 @@ jobs:
       publishes: ${{ steps.cfg.outputs.publishes }}
       gates: ${{ steps.cfg.outputs.gates }}
       localChecks: ${{ steps.cfg.outputs.localChecks }}
+      scriptTest: ${{ steps.cfg.outputs.scriptTest }}
+      scriptLint: ${{ steps.cfg.outputs.scriptLint }}
+      scriptTypecheck: ${{ steps.cfg.outputs.scriptTypecheck }}
     steps:
       - uses: noy-db/.github/actions/setup-family@v2
         with:
@@ -65,8 +68,8 @@ jobs:
         with:
           manager: ${{ needs.config.outputs.manager }}
           node-version: ${{ inputs.node-version }}
-      # --if-present throughout: noy-db-docs defines no `build`, and a member
-      # that later drops a script must not turn this into a red build.
+      # `build` alone stays --if-present: noy-db-docs defines none. The three
+      # scripts below (test, lint, typecheck) are REQUIRED — see the test job.
       - name: Build
         run: ${{ needs.config.outputs.manager }} run --if-present build
 
@@ -85,8 +88,17 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Build
         run: ${{ needs.config.outputs.manager }} run --if-present build
+      # ⛔ No --if-present on test, lint or typecheck (family#142). With it, a
+      # renamed or deleted script turned the job green with nothing run. A repo
+      # without one of the three declares `"scripts": { "<name>": false }` in
+      # its family.config.json and the step is skipped; the opt-out is a
+      # declaration in the member's own tree, where a reviewer can see it.
+      # The guard is `!= 'false'`, never `== 'true'`: an unset output is '' (and
+      # a tools checkout older than this key prints `null`), and both must mean
+      # REQUIRED — only an explicit false in the member's tree skips a step.
       - name: Test
-        run: ${{ needs.config.outputs.manager }} run --if-present test
+        if: needs.config.outputs.scriptTest != 'false'
+        run: ${{ needs.config.outputs.manager }} run test
 
   gates:
     name: gate ${{ matrix.gate }}
@@ -148,7 +160,10 @@ jobs:
           node-version: ${{ inputs.node-version }}
       - name: Build
         run: ${{ needs.config.outputs.manager }} run --if-present build
+      # Required unless declared off in family.config.json — see the test job.
       - name: Lint
-        run: ${{ needs.config.outputs.manager }} run --if-present lint
+        if: needs.config.outputs.scriptLint != 'false'
+        run: ${{ needs.config.outputs.manager }} run lint
       - name: Typecheck
-        run: ${{ needs.config.outputs.manager }} run --if-present typecheck
+        if: needs.config.outputs.scriptTypecheck != 'false'
+        run: ${{ needs.config.outputs.manager }} run typecheck

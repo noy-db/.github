@@ -34,6 +34,15 @@ outputs:
   localChecks:
     description: The repo's own check commands, as a JSON array string.
     value: ${{ steps.read.outputs.localChecks }}
+  scriptTest:
+    description: "'true' unless the config's scripts.test is false — whether ci.yml must run `<manager> run test`"
+    value: ${{ steps.read.outputs.scriptTest }}
+  scriptLint:
+    description: "'true' unless the config's scripts.lint is false"
+    value: ${{ steps.read.outputs.scriptLint }}
+  scriptTypecheck:
+    description: "'true' unless the config's scripts.typecheck is false"
+    value: ${{ steps.read.outputs.scriptTypecheck }}
 
 runs:
   using: composite
@@ -54,5 +63,8 @@ runs:
           echo "publicRelease=$(jq -r '.publicRelease' <<<"$cfg")"
           echo "gates=$(jq -c '.gates' <<<"$cfg")"
           echo "localChecks=$(jq -c '.localChecks' <<<"$cfg")"
+          echo "scriptTest=$(jq -r '.scripts.test' <<<"$cfg")"
+          echo "scriptLint=$(jq -r '.scripts.lint' <<<"$cfg")"
+          echo "scriptTypecheck=$(jq -r '.scripts.typecheck' <<<"$cfg")"
         } >> "$GITHUB_OUTPUT"
         echo "$cfg"

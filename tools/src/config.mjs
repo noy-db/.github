@@ -20,6 +20,7 @@ const MANAGERS = PROPS.manager.enum
 const BINDS = PROPS.binds.enum
 const GATES = PROPS.gates.items.enum
 const SEAM_KINDS = PROPS.packageSeams.additionalProperties.enum
+const SCRIPTS = Object.keys(PROPS.scripts.properties)
 const REQUIRED = SCHEMA.required
 const OPTIONAL = Object.keys(PROPS).filter((k) => !REQUIRED.includes(k))
 
@@ -65,6 +66,15 @@ function validate(cfg, label) {
     bad(`allowHubRoot is ${show(cfg.allowHubRoot)}; expected a boolean.`)
   if ('conformanceKit' in cfg && typeof cfg.conformanceKit !== 'string')
     bad(`conformanceKit is ${show(cfg.conformanceKit)}; expected a string.`)
+  if ('scripts' in cfg) {
+    const sc = cfg.scripts
+    if (sc === null || typeof sc !== 'object' || Array.isArray(sc))
+      bad(`scripts is ${show(sc)}; expected an object with boolean test / lint / typecheck.`)
+    for (const [name, value] of Object.entries(sc)) {
+      if (!SCRIPTS.includes(name)) bad(`scripts.${name} is not a script ci.yml requires; allowed: ${SCRIPTS.join(', ')}.`)
+      if (typeof value !== 'boolean') bad(`scripts.${name} is ${show(value)}; expected a boolean.`)
+    }
+  }
   if ('packageSeams' in cfg) {
     const seams = cfg.packageSeams
     if (seams === null || typeof seams !== 'object' || Array.isArray(seams))
@@ -90,6 +100,10 @@ function validate(cfg, label) {
     publicRelease: cfg.publicRelease ?? true,
     conformanceKit: cfg.conformanceKit ?? null,
     packageSeams: cfg.packageSeams ?? {},
+    // Absent means REQUIRED: every member measured 2026-10-12 defines all
+    // three, so the default changes nothing today and the opt-out is a
+    // declaration in the repo's own tree, never an --if-present in the rail.
+    scripts: Object.fromEntries(SCRIPTS.map((name) => [name, cfg.scripts?.[name] ?? true])),
   }
 }
 

@@ -95,20 +95,20 @@ jobs:
           echo "── promoting @$DIST_TAG → $VERSION from $TAG"
 
       # The CALLER at the tag. The workflow body is still whatever `@v2` holds.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ steps.ref.outputs.tag }}
 
       # ⛔ v2, matching the hardcoded ref in actions/setup-family. A caller on one
       # tag whose tools come from another is a green that examined the wrong code.
       - name: Check out family-tools
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: noy-db/.github
           ref: v2
           path: .family-tools
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'

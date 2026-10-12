@@ -225,8 +225,9 @@ is cached on `hashFiles('**/pnpm-lock.yaml')`.
 ### `actions/family-config`
 
 Runs `cli.mjs config --root . --print` and exposes the config as outputs:
-`layout`, `manager`, `binds`, `publishes`, `publicRelease` (strings) and
-`gates`, `localChecks` (JSON array strings, for `fromJSON`). `binds` is the
+`layout`, `manager`, `binds`, `publishes`, `publicRelease`, `scriptTest`,
+`scriptLint`, `scriptTypecheck` (strings) and `gates`, `localChecks` (JSON
+array strings, for `fromJSON`). `binds` is the
 literal string `null` when the repo binds no seam. `publicRelease` is `'true'`
 unless the config says `false` — whether artefacts may go to **public** npm,
 independent of `publishes` (lobby: `publishes: true`, `publicRelease: false` —
@@ -239,9 +240,18 @@ it cuts `@dev` snapshots and nothing else).
 `lint-typecheck`. The test matrix is the `node-matrix` input, default
 `["22"]`; the nightly caller passes `["22","24"]`, and a repo without it has
 stopped testing Node 24. Every job re-runs setup and the build; nothing is
-passed between them as an artifact. Every script invocation is
-`<manager> run --if-present <script>`, so a repo without a `build` or `test`
-script (noy-db-docs) is green rather than red.
+passed between them as an artifact. `build` is `<manager> run --if-present
+build` (noy-db-docs defines none). **`test`, `lint` and `typecheck` are
+required** (family#142): they run without `--if-present`, so a renamed or
+deleted script is a red build, never a silent green. A repo that genuinely has
+none of one declares it off in its own `family.config.json`:
+
+```json
+"scripts": { "test": true, "lint": false, "typecheck": true }
+```
+
+Absent means all three required; `false` skips that step. Measured 2026-10-12:
+every member defines all three, so no repo needs the key today.
 
 No job may be made soft. A gate that cannot fail the build is not a gate.
 
