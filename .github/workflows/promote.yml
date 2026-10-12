@@ -64,15 +64,35 @@ jobs:
     # token, which is what makes it real rather than advisory.
     # ⚠️ What still protects this job: the census refusal above, and the fact that
     # `npm dist-tag` needs the org NPM_TOKEN, which only Actions holds.
+    #
+    # ⛔ The inputs reach every `run:` block through the environment, NEVER by
+    # template expansion into the script text (family#142). `${{ inputs.x }}`
+    # inside a `run:` is pasted into the shell before it runs, so a dispatch
+    # value of `'; curl … $NODE_AUTH_TOKEN` would have executed with the publish
+    # token in scope — and any write-capable user can dispatch the caller. Same
+    # rule ci.yml applies to localChecks: a value is data here, not shell.
+    env:
+      VERSION: ${{ inputs.version }}
+      DIST_TAG: ${{ inputs.dist_tag }}
+      TAG_INPUT: ${{ inputs.tag }}
     steps:
-      - name: Resolve the tag
+      # First, before any checkout or registry call: refuse anything that is not
+      # the shape a version, a dist-tag or a git tag can take. Bash `=~` with a
+      # QUOTED pattern matches it literally, hence the variables.
+      - name: Validate the inputs, resolve the tag
         id: ref
         run: |
           set -euo pipefail
-          TAG='${{ inputs.tag }}'
-          [ -n "$TAG" ] || TAG='v${{ inputs.version }}'
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          disttag='^[a-z][a-z0-9-]*$'
+          gittag='^v?[0-9A-Za-z.-]+$'
+          [[ $VERSION =~ $semver ]]   || { echo "::error::version '$VERSION' is not a semver version"; exit 1; }
+          [[ $DIST_TAG =~ $disttag ]] || { echo "::error::dist_tag '$DIST_TAG' is not a dist-tag name"; exit 1; }
+          TAG="${TAG_INPUT:-v$VERSION}"
+          [[ $TAG =~ $gittag ]]       || { echo "::error::tag '$TAG' is not a git tag name"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "── promoting @${{ inputs.dist_tag }} → ${{ inputs.version }} from $TAG"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "── promoting @$DIST_TAG → $VERSION from $TAG"
 
       # The CALLER at the tag. The workflow body is still whatever `@v2` holds.
       - uses: actions/checkout@v5
@@ -118,7 +138,8 @@ jobs:
           node .family-tools/tools/cli.mjs names --root . > /tmp/names.txt
           COUNT=$(grep -c . /tmp/names.txt || true)
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-          echo "── $COUNT publishable name(s) at ${{ steps.ref.outputs.tag }}"
+          echo "COUNT=$COUNT" >> "$GITHUB_ENV"
+          echo "── $COUNT publishable name(s) at $TAG"
           cat /tmp/names.txt
           # Zero names is "could not read the repo", never "nothing to do".
           [ "$COUNT" -gt 0 ] || { echo '::error::zero publishable names — refusing'; exit 1; }
@@ -139,11 +160,11 @@ jobs:
             # a 200 on the per-version URL while a resolver sees nothing.
             have=$(curl -sS "https://registry.npmjs.org/${enc}?cb=$RANDOM$RANDOM" \
                      -H 'accept: application/vnd.npm.install-v1+json' \
-                   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s);console.log(p.versions&&p.versions["${{ inputs.version }}"]?"yes":"no")}catch{console.log("unreadable")}})')
-            [ "$have" = yes ] || { echo "  ✗ $P does not carry ${{ inputs.version }} ($have)"; missing=$((missing+1)); }
+                   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s);console.log(p.versions&&p.versions[process.env.VERSION]?"yes":"no")}catch{console.log("unreadable")}})')
+            [ "$have" = yes ] || { echo "  ✗ $P does not carry $VERSION ($have)"; missing=$((missing+1)); }
           done < /tmp/names.txt
-          [ "$missing" -eq 0 ] || { echo "::error::$missing of ${{ steps.names.outputs.count }} do not carry ${{ inputs.version }} — publish first"; exit 1; }
-          echo "── all ${{ steps.names.outputs.count }} carry ${{ inputs.version }}"
+          [ "$missing" -eq 0 ] || { echo "::error::$missing of $COUNT do not carry $VERSION — publish first"; exit 1; }
+          echo "── all $COUNT carry $VERSION"
 
       - name: Move @${{ inputs.dist_tag }}
         if: ${{ !inputs.dry_run }}
@@ -154,10 +175,10 @@ jobs:
           moved=0; already=0; failed=0
           while read -r P; do
             [ -z "$P" ] && continue
-            cur=$(npm view "$P" "dist-tags.${{ inputs.dist_tag }}" 2>/dev/null || echo '')
-            if [ "$cur" = '${{ inputs.version }}' ]; then already=$((already+1)); continue; fi
-            if npm dist-tag add "${P}@${{ inputs.version }}" '${{ inputs.dist_tag }}'; then
-              echo "  moved $P: ${cur:-none} → ${{ inputs.version }}"; moved=$((moved+1))
+            cur=$(npm view "$P" "dist-tags.$DIST_TAG" 2>/dev/null || echo '')
+            if [ "$cur" = "$VERSION" ]; then already=$((already+1)); continue; fi
+            if npm dist-tag add "${P}@${VERSION}" "$DIST_TAG"; then
+              echo "  moved $P: ${cur:-none} → $VERSION"; moved=$((moved+1))
             else
               echo "  FAIL  $P"; failed=$((failed+1))
             fi
@@ -171,8 +192,8 @@ jobs:
           set -uo pipefail
           while read -r P; do
             [ -z "$P" ] && continue
-            cur=$(npm view "$P" "dist-tags.${{ inputs.dist_tag }}" 2>/dev/null || echo 'none')
-            [ "$cur" = '${{ inputs.version }}' ] || echo "  would move $P: $cur → ${{ inputs.version }}"
+            cur=$(npm view "$P" "dist-tags.$DIST_TAG" 2>/dev/null || echo 'none')
+            [ "$cur" = "$VERSION" ] || echo "  would move $P: $cur → $VERSION"
           done < /tmp/names.txt
 
       # ⭐ A green write is not a moved tag. The family has been bitten twice by
@@ -188,12 +209,12 @@ jobs:
               enc=${P//\//%2f}
               got=$(curl -sS "https://registry.npmjs.org/${enc}?cb=$RANDOM$RANDOM" \
                       -H 'accept: application/vnd.npm.install-v1+json' \
-                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s)["dist-tags"]["${{ inputs.dist_tag }}"]||"none")}catch{console.log("unreadable")}})')
-              if [ "$got" = '${{ inputs.version }}' ]; then ok=$((ok+1)); else bad="$bad $P($got)"; fi
+                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s)["dist-tags"][process.env.DIST_TAG]||"none")}catch{console.log("unreadable")}})')
+              if [ "$got" = "$VERSION" ]; then ok=$((ok+1)); else bad="$bad $P($got)"; fi
             done < /tmp/names.txt
-            echo "── @${{ inputs.dist_tag }} = ${{ inputs.version }} at the registry: $ok / ${{ steps.names.outputs.count }}"
+            echo "── @$DIST_TAG = $VERSION at the registry: $ok / $COUNT"
             [ -n "$bad" ] && echo "   not confirmed:$bad"
-            [ "$ok" = '${{ steps.names.outputs.count }}' ]
+            [ "$ok" = "$COUNT" ]
           }
           # One retry: a dist-tag read can lag its own write by seconds.
           check || { echo '   re-checking after propagation…'; sleep 30; check; }

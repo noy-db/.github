@@ -1,0 +1,15 @@
+# templates/snapshot-caller.yml — copy to <member>/.github/workflows/snapshot.yml
+# Thin caller. Copied only into repos whose family.config.json has publishes: true.
+name: snapshot
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+jobs:
+  snapshot:
+    uses: noy-db/.github/.github/workflows/snapshot.yml@v2
+    permissions:
+      contents: read
+      packages: write

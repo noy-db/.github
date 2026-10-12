@@ -19,20 +19,21 @@ on:
       NPM_TOKEN:
         required: true
 
-# actions: read is what lets verify ask the API for this commit's snapshot run.
-# An explicit permissions block grants NOTHING it does not name, and a reusable
-# workflow's grants are capped by its caller's — so the caller template carries
-# the same three lines. Measured: core's rerun failed verify with "Resource not
-# accessible by integration (HTTP 403)" while the identical query passed from a
-# laptop token.
-permissions:
-  contents: read
-  id-token: write
-  actions: read
+# Permissions are granted PER JOB, each only what that job uses (family#142):
+# a workflow-level block handed `id-token: write` to every job, including
+# peer-floor's network install, while nothing here mints an OIDC token.
+# `actions: read` is what lets verify ask the API for this commit's snapshot
+# run. An explicit permissions block grants NOTHING it does not name, and a
+# reusable workflow's grants are capped by its caller's — so the caller template
+# carries the UNION of the grants below. Measured: core's rerun failed verify
+# with "Resource not accessible by integration (HTTP 403)" while the identical
+# query passed from a laptop token.
 
 jobs:
   config:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       manager: ${{ steps.cfg.outputs.manager }}
       layout: ${{ steps.cfg.outputs.layout }}
@@ -59,6 +60,7 @@ jobs:
     needs: config
     if: needs.config.outputs.publicRelease == 'false'
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - run: |
           echo '::error::family.config.json declares publicRelease: false — this repo does not publish to public npm. Nothing was published.'
@@ -68,6 +70,9 @@ jobs:
     needs: config
     if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: noy-db/.github/actions/setup-family@v2
         with:
@@ -160,6 +165,8 @@ jobs:
     needs: config
     if: needs.config.outputs.publishes == 'true' && needs.config.outputs.publicRelease != 'false'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: noy-db/.github/actions/setup-family@v2
         with:
@@ -187,6 +194,11 @@ jobs:
     # ⚠️ NPM_TOKEN is an ORG secret scoped to the six public publishers, no longer
     # six repo copies. It is still reached through `secrets: inherit` in the caller.
     environment: release
+    # id-token: write stays on THIS job only — the provenance flip (see the
+    # publish step) is then one line, and no other job ever holds it.
+    permissions:
+      contents: read
+      id-token: write
     env:
       MANAGER: ${{ needs.config.outputs.manager }}
       LAYOUT: ${{ needs.config.outputs.layout }}
