@@ -134,12 +134,31 @@ test('a MULTI-LINE import of a DECLARED package stays green', (t) => {
   assert.deepEqual(gate(root), [])
 })
 
-test('Buffer.from(…) and a "from" inside a string are not imports', (t) => {
+test('Buffer.from(…), a "from" inside a string, and one inside a multi-line template literal are not imports', (t) => {
   const root = copyFixture(t, 'workspace')
   appendFileSync(join(root, SRC), [
     '',
     "export const h = Buffer.from('hex')",
     'export const s = "read from \'disk\'"',
+    'export const q = `',
+    '  select id',
+    "  from 'docs'",
+    '`',
+    '',
+  ].join('\n'))
+  assert.deepEqual(gate(root), [])
+})
+
+test('a multi-line import through a #subpath (Node imports map) is not a dependency', (t) => {
+  // hub's `#capsule` door: the exact shape that went red on core's real tree
+  // once multi-line imports matched.
+  const root = copyFixture(t, 'workspace')
+  appendFileSync(join(root, SRC), [
+    '',
+    'import {',
+    '  sealKey,',
+    "} from '#capsule'",
+    'export const k = sealKey',
     '',
   ].join('\n'))
   assert.deepEqual(gate(root), [])

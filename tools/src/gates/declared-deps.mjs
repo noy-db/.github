@@ -32,11 +32,12 @@ const ROOT_TOOLING = new Set(['vitest', 'tsup', 'typescript', 'eslint'])
 // before `from`, so `import {\n  a,\n} from 'pkg'` — prettier's shape for any
 // list over the print width — never matched, and an undeclared package imported
 // that way was invisible. Now the clause is matched on its own: an `import`/`export`
-// keyword, then any span containing NO quote, then `from '…'`. The no-quote span
-// is what keeps it bounded — it cannot cross a string literal (`"read from 'x'"`)
+// keyword, then any span containing NO quote or backtick, then `from '…'`. The
+// no-quote span is what keeps it bounded — it cannot cross a string literal
+// (`"read from 'x'"`), a template literal holding SQL (`\`select … from 'docs'\``)
 // or a bare `import 'x'`, and `Buffer.from('hex')` has no whitespace after
-// `from`, so neither is a dependency.
-const IMPORT = /\b(?:import|export)\b[^'"]*?\bfrom\s+['"]([^'"]+)['"]/g
+// `from`, so none of those is a dependency.
+const IMPORT = /\b(?:import|export)\b[^'"`]*?\bfrom\s+['"]([^'"]+)['"]/g
 const BARE_IMPORT = /^\s*import\s+['"]([^'"]+)['"]/gm
 const DYNAMIC = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g
 const REQUIRE = /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g
@@ -83,7 +84,11 @@ export function runDeclaredDeps(root, cfg) {
         let m
         while ((m = re.exec(code)) !== null) {
           const spec = m[1]
-          if (spec.startsWith('.') || spec.startsWith('node:')) continue
+          // `#x` is a Node `imports`-map subpath, never a package name: hub's
+          // `#capsule` is deliberately EXTERNAL and resolved by the consumer's
+          // build condition. It only became visible once multi-line imports
+          // matched (family#141), measured on core's real tree.
+          if (spec.startsWith('.') || spec.startsWith('node:') || spec.startsWith('#')) continue
           const name = bare(spec)
           if (name === pj.name) continue // a package may reference itself
           if (!used.has(name)) used.set(name, file)
