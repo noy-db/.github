@@ -75,11 +75,28 @@ test('both the reusable workflow and the caller grant actions: read — verify r
   // reusable workflow's permissions are capped by its caller's. Both sides
   // must say it. Measured: 403 in core's first verify run with only
   // contents + id-token.
-  for (const y of [release(), caller()]) {
-    // Comment lines are allowed inside the block: the caller template carries
-    // a two-line explanation of why the grant must be repeated there.
-    assert.match(y, /^permissions:\n(?:  (?:[a-z-]+: [a-z]+.*|#.*)\n)*  actions: read/m)
-  }
+  // The caller grants at workflow level (one job, the union). Comment lines
+  // are allowed inside the block: the template carries a two-line explanation
+  // of why the grant must be repeated there.
+  assert.match(caller(), /^permissions:\n(?:  (?:[a-z-]+: [a-z]+.*|#.*)\n)*  actions: read/m)
+  // The reusable workflow grants PER JOB, and only verify reads the API.
+  const y = release()
+  const verify = y.slice(y.indexOf('\n  verify:'), y.indexOf('\n  peer-floor:'))
+  assert.match(verify, /^    permissions:\n(?:      [a-z-]+: [a-z]+\n)*      actions: read/m)
+})
+
+// ── family#142 ──────────────────────────────────────────────────────────────
+// A workflow-level block handed id-token: write to every job while provenance
+// is off and peer-floor installs from the network. Each job names its own.
+test('permissions are per job: no workflow-level block, every job carries one, id-token: write only on publish', () => {
+  const y = release()
+  assert.doesNotMatch(y, /^permissions:/m, 'a workflow-level block grants every job the union')
+  const jobs = y.split(/^  [a-z-]+:\n/m).slice(1)
+  assert.ok(jobs.length >= 5, `expected the split to find the jobs, got ${jobs.length}`)
+  for (const job of jobs) assert.match(job, /^    permissions:( \{\}|\n)/m, 'a job without a block inherits the caller\'s whole grant')
+  const holders = jobs.filter((job) => /id-token: write/.test(job))
+  assert.equal(holders.length, 1)
+  assert.match(holders[0], /environment: release/)
 })
 
 test('the publish job ensures @changesets/cli is installed before calling it — flat repos do not carry it', () => {
