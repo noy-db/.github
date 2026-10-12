@@ -267,3 +267,20 @@ test('package-seam: CONTROL — a pin its range DOES admit passes', (t) => {
   const failures = runArchitecture(root, seamCfg(root, { '@noy-db/to-meter': 'peer' })).failures
   assert.deepEqual(failures.filter((x) => x.rule === 'package-seam'), [])
 })
+
+test('flat-as: the /as row is an ALLOW-LIST too — a value import of an unlisted subpath fails (family#152)', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { openCargo } from '@noy-db/hub/cargo'\n" + readFileSync(f, 'utf8'))
+  const failures = runArchitecture(root, { ...loadConfig(root), conformanceKit: null }).failures
+  const hits = failures.filter((x) => x.rule === 'no-runtime-store-import' && /hub\/cargo/.test(x.msg))
+  assert.equal(hits.length, 1)
+})
+
+test('flat-as: /introspection and `import type` of an unlisted subpath stay green (family#152)', (t) => {
+  const root = copyFixture(t, 'flat-as')
+  const f = join(root, 'as-good/src/index.ts')
+  writeFileSync(f, "import { describe } from '@noy-db/hub/introspection'\nimport type { Cargo } from '@noy-db/hub/cargo'\n" + readFileSync(f, 'utf8'))
+  const failures = runArchitecture(root, { ...loadConfig(root), conformanceKit: null }).failures
+  assert.deepEqual(failures.filter((x) => x.where.endsWith('as-good/src/index.ts')), [])
+})

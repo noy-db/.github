@@ -53,7 +53,10 @@ const BANNED = new Set(['crypto-js', 'node-forge', 'tweetnacl', 'bcryptjs', 'bcr
 // the one that declares it.
 const SEAM = {
   '@noy-db/hub/to': { allowed: new Set(['/to']), rule: 'to-only' },
-  '@noy-db/hub/as': { storeOnly: true, rule: 'no-runtime-store-import' },
+  // family#152 (ruled 2026-10-12): BOTH halves — the store prohibition, and an
+  // allow-list of what as-* was measured to value-import (root 14, /as 9,
+  // /introspection 3). A new hub subpath in as is a seam change and goes red.
+  '@noy-db/hub/as': { storeOnly: true, allowed: new Set(['', '/as', '/introspection']), rule: 'no-runtime-store-import' },
   '@noy-db/hub/on': { storeOnly: true, rule: 'no-runtime-store-import', peerOptionalWhenUnused: true },
   '@noy-db/hub/at': { storeOnly: true, rule: 'no-runtime-store-import' },
   '@noy-db/hub/cargo': { allowed: new Set(['', '/cargo', '/pod', '/share-link']), rule: 'klum-only-seam' },
@@ -140,7 +143,9 @@ export function runArchitecture(root, cfg) {
           if (seam.storeOnly) {
             if (sub === '/to')
               fail(seam.rule, `${pj.name}: value-imports '@noy-db/hub/to' — this layer never performs storage I/O; use \`import type\` for the contract's types.`, file)
-            continue
+            // A row with no allow-list is a pure prohibition; one with both
+            // (the /as row) falls through to the allow-list below.
+            if (sub === '/to' || !allowed) continue
           }
 
           if (allowed.has(sub)) continue
