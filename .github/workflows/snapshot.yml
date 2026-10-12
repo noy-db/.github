@@ -135,15 +135,22 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The in-repo half of the verification: every name this run published
-      # must be resolvable from the registry under `dev`. The cross-repo half —
+      # must resolve under `dev` to THIS run's version. The cross-repo half —
       # installing a sibling's snapshot alongside this one WITHOUT
       # --legacy-peer-deps — needs a token this workflow does not have.
-      - name: Verify the published names resolve
+      # ⛔ family#140: asking only whether `<name>@dev` resolves to ANY version
+      # cannot see a drop — a package `changeset publish` silently skipped still
+      # resolves to the PREVIOUS snapshot's `0.0.0-dev-…` and passed. So the
+      # expected version is read per name from the manifests changesets wrote
+      # (the same `name@version` lines Record prints) and compared exactly.
+      - name: Verify the published names resolve to this run's version
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          names=$(node .family-tools/tools/cli.mjs snapshot-report --root . --names)
+          # An ASSIGNMENT, not `for p in $(…)`: the latter loses the command's
+          # exit status, so a failing snapshot-report would loop over nothing.
+          expected=$(node .family-tools/tools/cli.mjs snapshot-report --root .)
           probe="$RUNNER_TEMP/probe"
           mkdir -p "$probe"
           cd "$probe"
@@ -153,15 +160,19 @@ jobs:
           # substitution inside an argument loses its exit status, so an
           # unresolvable name printed an empty version and the run went green.
           # Capture per name, then fail after the loop so the summary lists
-          # EVERY missing name rather than only the first.
-          missing=0
-          for p in $names; do
-            v=$(npm view "$p@dev" version 2>/dev/null || true)
-            if [ -z "$v" ]; then
-              echo "::error::$p@dev not resolvable after publish"
-              missing=1
+          # EVERY missing or stale name rather than only the first.
+          # Each line is `<name>@<version>`; the name itself is scoped, so split
+          # on the LAST `@`.
+          stale=0
+          for line in $expected; do
+            p="${line%@*}"
+            want="${line##*@}"
+            got=$(npm view "$p@dev" version 2>/dev/null || true)
+            if [ "$got" != "$want" ]; then
+              echo "::error::$p@dev is ${got:-unresolvable}, expected $want — dropped by this publish"
+              stale=1
             else
-              echo "$p@dev -> $v"
+              echo "$p@dev -> $got"
             fi
           done
-          [ "$missing" -eq 0 ] || exit 1
+          [ "$stale" -eq 0 ] || exit 1

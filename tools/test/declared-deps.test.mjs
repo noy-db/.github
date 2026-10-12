@@ -100,6 +100,70 @@ test('CONTROL: a genuinely undeclared dependency in real code is still caught', 
   assert.ok(!named.includes('ghost'), 'while the commented one is not')
 })
 
+// ── family#141 ───────────────────────────────────────────────────────────────
+
+test('a MULTI-LINE import of an undeclared package fails (false control)', (t) => {
+  // prettier's shape for any import list over the print width. The old IMPORT
+  // regex forbade a newline before `from`, so this matched nothing and went green.
+  const root = copyFixture(t, 'workspace')
+  appendFileSync(join(root, SRC), [
+    '',
+    'import {',
+    '  chunk,',
+    '  uniq,',
+    "} from 'lodash'",
+    'export const c = [chunk, uniq]',
+    '',
+  ].join('\n'))
+  const failures = gate(root)
+  assert.equal(failures.length, 1)
+  assert.match(failures[0], /@noy-db\/a: uses "lodash"/)
+  assert.match(failures[0], /index\.ts/)
+})
+
+test('a MULTI-LINE import of a DECLARED package stays green', (t) => {
+  const root = copyFixture(t, 'workspace')
+  appendFileSync(join(root, SRC), [
+    '',
+    'import type {',
+    '  StoreDescriptor as SD,',
+    "} from '@noy-db/hub/to'",
+    'export const d: SD | null = null',
+    '',
+  ].join('\n'))
+  assert.deepEqual(gate(root), [])
+})
+
+test('Buffer.from(…), a "from" inside a string, and one inside a multi-line template literal are not imports', (t) => {
+  const root = copyFixture(t, 'workspace')
+  appendFileSync(join(root, SRC), [
+    '',
+    "export const h = Buffer.from('hex')",
+    'export const s = "read from \'disk\'"',
+    'export const q = `',
+    '  select id',
+    "  from 'docs'",
+    '`',
+    '',
+  ].join('\n'))
+  assert.deepEqual(gate(root), [])
+})
+
+test('a multi-line import through a #subpath (Node imports map) is not a dependency', (t) => {
+  // hub's `#capsule` door: the exact shape that went red on core's real tree
+  // once multi-line imports matched.
+  const root = copyFixture(t, 'workspace')
+  appendFileSync(join(root, SRC), [
+    '',
+    'import {',
+    '  sealKey,',
+    "} from '#capsule'",
+    'export const k = sealKey',
+    '',
+  ].join('\n'))
+  assert.deepEqual(gate(root), [])
+})
+
 test('a URL in a string is not a comment, and the line after it still scans', (t) => {
   const root = copyFixture(t, 'workspace')
   appendFileSync(join(root, SRC), [
