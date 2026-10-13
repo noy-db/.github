@@ -56,7 +56,8 @@
           "codemod-rows",
           "check-license",
           "prose-examples",
-          "changeset-names"
+          "changeset-names",
+          "changeset-coverage"
         ]
       }
     },
