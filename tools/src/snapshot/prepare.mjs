@@ -60,7 +60,16 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
     )
   }
 
+  // Unscoped siblings step (5) is about to privatise — they never reach the org
+  // registry, so an edge onto one must resolve from PUBLIC npm instead (step 4c).
+  const unscoped = new Map(
+    entries
+      .filter(({ json }) => json.name && !json.name.startsWith('@noy-db/') && json.private !== true)
+      .map(({ json }) => [json.name, json.version]),
+  )
+
   const privatised = []
+  const repinned = []
   const widened = []
   const widenedDeps = []
   const skipped = []
@@ -145,6 +154,24 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
       if (!widenedDeps.includes(json.name)) widenedDeps.push(json.name)
     }
 
+    // (4c) Repin a `workspace:` edge onto an UNSCOPED sibling to its public
+    // version. Step (5) privatises that sibling, but changesets still turns
+    // `workspace:^` into `^<snapshot version>` — a version that can exist on no
+    // registry, so the edge is unresolvable for every @dev consumer.
+    // ⛔ Measured 2026-10-13 (family#213): `@noy-db/cli@0.0.0-dev-…` peered
+    // `create-noy-db@^0.0.0-dev-…`. Unscoped names bypass the `@noy-db`
+    // scope redirect, so the tree's own (last-cut, public) version resolves.
+    for (const block of ['peerDependencies', 'dependencies']) {
+      for (const [name, range] of Object.entries(json[block] ?? {})) {
+        if (!unscoped.has(name) || !range.startsWith('workspace:')) continue
+        const v = unscoped.get(name)
+        const spec = range.slice('workspace:'.length)
+        json[block][name] = spec === '*' ? v : spec === '^' || spec === '~' ? `${spec}${v}` : spec
+        touched = true
+        if (!repinned.includes(json.name)) repinned.push(json.name)
+      }
+    }
+
     // (5) An unscoped name has no place in the @noy-db org registry, and a
     // changesets run would otherwise try to publish it there and 404. Marking
     // it private is the narrowest way to take it out of the set.
@@ -160,6 +187,7 @@ export function prepareSnapshot(root, cfg, { tag, registry }) {
   return {
     versionedPackages,
     privatised: privatised.sort(),
+    repinned: repinned.sort(),
     widened: widened.sort(),
     widenedDeps: widenedDeps.sort(),
     skipped: skipped.sort(),

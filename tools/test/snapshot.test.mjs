@@ -52,6 +52,7 @@ test('prepareSnapshot: all five effects, on a copy of fixtures/workspace', (t) =
   assert.deepEqual(summary, {
     versionedPackages: ['@noy-db/a', '@noy-db/hub'],
     privatised: ['some-tool'],
+    repinned: [],
     widened: ['@noy-db/a'],
     widenedDeps: [],
     skipped: [],
@@ -253,4 +254,21 @@ test('report --version prints the line version once, and refuses a non-uniform l
   json.version = '0.6.0'
   writeFileSync(p, JSON.stringify(json, null, 2) + '\n')
   assert.throws(() => snapshotReport(root, loadConfig(root), { version: true }), /not uniform: 0\.6\.0, 0\.7\.0|not uniform: 0\.7\.0, 0\.6\.0/)
+})
+
+test('prepareSnapshot: a workspace: edge onto an UNSCOPED sibling is repinned to its public version (family#213)', (t) => {
+  const root = copyFixture(t, 'workspace')
+  addUnscoped(root) // some-tool@0.7.0, privatised by step 5
+  const p = join(root, 'packages', 'a', 'package.json')
+  const j = JSON.parse(readFileSync(p, 'utf8'))
+  j.peerDependencies = { ...(j.peerDependencies ?? {}), 'some-tool': 'workspace:^' }
+  j.dependencies = { ...(j.dependencies ?? {}), 'some-tool': 'workspace:*' }
+  writeFileSync(p, JSON.stringify(j, null, 2) + '\n')
+  const out = prepareSnapshot(root, loadConfig(root), OPTS)
+  const after = read(root, 'packages/a')
+  // ⛔ Left as workspace:^, changesets would write ^<snapshot> — on no registry.
+  assert.equal(after.peerDependencies['some-tool'], '^0.7.0')
+  assert.equal(after.dependencies['some-tool'], '0.7.0')
+  assert.deepEqual(out.repinned, ['@noy-db/a'])
+  assert.ok(out.privatised.includes('some-tool'))
 })
