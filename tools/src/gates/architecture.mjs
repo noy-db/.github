@@ -56,7 +56,7 @@ const SEAM = {
   // family#152 (ruled 2026-10-12): BOTH halves — the store prohibition, and an
   // allow-list of what as-* was measured to value-import (root 14, /as 9,
   // /introspection 3). A new hub subpath in as is a seam change and goes red.
-  '@noy-db/hub/as': { storeOnly: true, allowed: new Set(['', '/as', '/introspection']), rule: 'no-runtime-store-import' },
+  '@noy-db/hub/as': { storeOnly: true, allowed: new Set(['', '/as', '/introspection']), rule: 'no-runtime-store-import', allowRule: 'as-subpath-allow-list' },
   '@noy-db/hub/on': { storeOnly: true, rule: 'no-runtime-store-import', peerOptionalWhenUnused: true },
   '@noy-db/hub/at': { storeOnly: true, rule: 'no-runtime-store-import' },
   '@noy-db/hub/cargo': { allowed: new Set(['', '/cargo', '/pod', '/share-link']), rule: 'klum-only-seam' },
@@ -149,7 +149,11 @@ export function runArchitecture(root, cfg) {
           }
 
           if (allowed.has(sub)) continue
-          fail(seam.rule, `${pj.name}: imports '@noy-db/hub${sub}' — allowed: ${[...allowed].map((s) => `@noy-db/hub${s}`).join(', ')}.`, file)
+          // A row that is BOTH a prohibition and an allow-list names the two
+          // failures apart: an unlisted /team import is not store I/O, and
+          // reporting it as `no-runtime-store-import` sent a reader hunting
+          // for a store call that was never there (NEXT-CUT-BRIEF, 2026-10-12).
+          fail(seam.allowRule ?? seam.rule, `${pj.name}: imports '@noy-db/hub${sub}' — allowed: ${[...allowed].map((s) => `@noy-db/hub${s}`).join(', ')}.`, file)
         }
       })
     }
