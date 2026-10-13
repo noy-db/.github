@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // family-tools <command> [--root path] [--config path] [--print]
 //                        [--dry-run] [--tag t] [--registry url] [--names] [--version]
+//                        [--base ref]
 //
 // The ONLY place in this package that prints or exits. Every gate module
 // returns { failures } so a test can assert on the data instead of scraping
@@ -16,6 +17,7 @@ import { runCheckLicense } from './src/gates/check-license.mjs'
 import { runPeerFloor } from './src/gates/peer-floor.mjs'
 import { runProseExamples } from './src/gates/prose-examples.mjs'
 import { runChangesetNames } from './src/gates/changeset-names.mjs'
+import { runChangesetCoverage } from './src/gates/changeset-coverage.mjs'
 import { prepareSnapshot } from './src/snapshot/prepare.mjs'
 import { snapshotReport } from './src/snapshot/report.mjs'
 import { census, report as censusReport } from './src/release/census.mjs'
@@ -35,6 +37,7 @@ const GATES = {
   'check-license': { label: 'Licence tier on disk', run: runCheckLicense },
   'prose-examples': { label: 'Shipped examples compile', run: runProseExamples },
   'changeset-names': { label: 'Pending changesets name real packages', run: runChangesetNames },
+  'changeset-coverage': { label: 'Touched publishable packages are named by a changeset', run: runChangesetCoverage },
 }
 
 const COMMANDS = ['config', ...Object.keys(GATES), 'peer-floor', 'snapshot-prepare', 'snapshot-report', 'publish-census', 'changelog-census', 'names']
@@ -50,6 +53,7 @@ function parseArgs(argv) {
     version: false,
     tag: 'dev',
     registry: 'https://npm.pkg.github.com',
+    base: undefined,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -57,6 +61,7 @@ function parseArgs(argv) {
     else if (a === '--config') opts.config = argv[++i]
     else if (a === '--tag') opts.tag = argv[++i]
     else if (a === '--registry') opts.registry = argv[++i]
+    else if (a === '--base') opts.base = argv[++i]
     else if (a === '--print') opts.print = true
     else if (a === '--dry-run') opts.dryRun = true
     else if (a === '--names') opts.names = true
@@ -67,7 +72,7 @@ function parseArgs(argv) {
   }
   // A trailing value option reads past the end of argv; report it as a usage
   // error rather than letting resolve(undefined) throw a TypeError.
-  for (const [flag, key] of [['--root', 'root'], ['--config', 'config'], ['--tag', 'tag'], ['--registry', 'registry']])
+  for (const [flag, key] of [['--root', 'root'], ['--config', 'config'], ['--tag', 'tag'], ['--registry', 'registry'], ['--base', 'base']])
     if (argv.includes(flag) && opts[key] === undefined) throw new Error(`${flag} needs a value`)
   return opts
 }
@@ -81,6 +86,7 @@ function parseArgs(argv) {
 const usage = () =>
   `usage: family-tools <${COMMANDS.join('|')}> [--root path] [--config path] [--print]\n` +
   `                    [--dry-run] [--tag t] [--registry url] [--names] [--version]\n` +
+  `                    [--base ref]   (changeset-coverage: the PR base; default GITHUB_BASE_REF, else origin/main)\n` +
   `\n` +
   `⚠️  Do NOT pipe this command when you care about its exit code — \`… | head\`\n` +
   `    gives you head's status, not the gate's. Redirect to a file and read the\n` +
@@ -184,7 +190,8 @@ async function main(argv) {
     return 2
   }
 
-  const res = entry.run(root, cfg)
+  // Only changeset-coverage reads the third argument (its diff base).
+  const res = entry.run(root, cfg, { base: opts.base })
   const { failures, status } = res
   // `no-hub` is NOT a violation. codemod-rows reads its maps from the installed
   // @noy-db/hub, so an unresolvable hub means the gate could not run — exit 2,

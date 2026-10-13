@@ -32,7 +32,7 @@ import { join, relative } from 'node:path'
 /**
  * The workspace's package-name set, read from the manifest changesets reads.
  *
- * Returns { names, globs } or { unparsed } — and `unparsed` is deliberately
+ * Returns { names, globs, packages } or { unparsed } — and `unparsed` is deliberately
  * fatal upstream rather than skipped. An UNDER-counted denominator invents dead
  * names (loud, wrong, and it blocks a correct merge); an over-counted one only
  * misses a real row. Since the two failure directions are not symmetric, a glob
@@ -68,11 +68,18 @@ export function workspacePackages(root, layout = 'single') {
     return { unparsed: `family.config.json declares layout "${layout}" but no workspace manifest lists any package glob` }
 
   const names = new Set()
+  // `packages` carries the same set with its directory and `private` flag, for
+  // changeset-coverage, which maps touched paths onto it. Same walk, same
+  // denominator: a second walk would be a second denominator to drift.
+  const packages = []
   const add = (dir) => {
     const pj = join(dir, 'package.json')
     if (!existsSync(pj)) return
-    const { name } = JSON.parse(readFileSync(pj, 'utf8'))
-    if (name) names.add(name)
+    const manifest = JSON.parse(readFileSync(pj, 'utf8'))
+    if (manifest.name) {
+      names.add(manifest.name)
+      packages.push({ name: manifest.name, dir: relative(root, dir), private: manifest.private === true })
+    }
   }
   add(root) // a single-package repo, and harmless elsewhere
 
@@ -117,7 +124,7 @@ export function workspacePackages(root, layout = 'single') {
       if (statSync(p).isDirectory()) add(p)
     }
   }
-  return { names, globs }
+  return { names, globs, packages }
 }
 
 /** The package names a changeset's frontmatter bumps, with its own filename. */
