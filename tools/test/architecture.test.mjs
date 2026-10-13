@@ -273,8 +273,10 @@ test('flat-as: the /as row is an ALLOW-LIST too — a value import of an unliste
   const f = join(root, 'as-good/src/index.ts')
   writeFileSync(f, "import { openCargo } from '@noy-db/hub/cargo'\n" + readFileSync(f, 'utf8'))
   const failures = runArchitecture(root, { ...loadConfig(root), conformanceKit: null }).failures
-  const hits = failures.filter((x) => x.rule === 'no-runtime-store-import' && /hub\/cargo/.test(x.msg))
+  const hits = failures.filter((x) => x.rule === 'as-subpath-allow-list' && /hub\/cargo/.test(x.msg))
   assert.equal(hits.length, 1)
+  // …and it is NOT reported as store I/O, which is what it used to read as.
+  assert.equal(failures.filter((x) => x.rule === 'no-runtime-store-import' && /hub\/cargo/.test(x.msg)).length, 0)
 })
 
 test('flat-as: /introspection and `import type` of an unlisted subpath stay green (family#152)', (t) => {
